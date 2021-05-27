@@ -20,6 +20,7 @@ At sites of real editing, we expect to see high cutting rate and high correlatio
 
 2)	delta_cutting_rate = Treated_cutting_rate – Control_cutting_rate
 
+![Supervised Detection](https://github.com/pinellolab/CRISPR_WGS_Detection/blob/main/supervised/WGS_supervised.png "Supervised Detection")
 
 ## Unsupervised Method
 
