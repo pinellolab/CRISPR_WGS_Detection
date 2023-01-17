@@ -7,6 +7,7 @@ be compatible with both python3 and python2.
 
 import subprocess
 import argparse
+import tempfile
 import sys
 import os
 
@@ -14,14 +15,17 @@ import os
 SCRIPTS = "/PHShome/mi825/Desktop/wgs_crisprcas9/src/"
 MUTECTPY = os.path.join(SCRIPTS, "run_mutect.py")
 STRELKAPY = os.path.join(SCRIPTS, "run_strelka.py")
-GUIDES = ["EMX1", "HEKSite4", "RNF2", "VEGFASite3"]
+PINDELPY = os.path.join(SCRIPTS, "run_pindel.py")
+# GUIDES = ["EMX1", "HEKSite4", "RNF2", "VEGFASite3"]
+GUIDES = ["HEKSite4", "RNF2", "VEGFASite3"]
 VCALLINGTOOLS = ["mutect2", "strelka", "pindel", "varscan"]
-CELLTYPES = ["GM12878", "K562"]
+# CELLTYPES = ["GM12878", "K562"]
+CELLTYPES = ["GM12878"]
 BASEDIR = "/data/pinello/PROJECTS/2017_07_DARPA_SIMULATIONS/"
 GUIDESEQ = os.path.join(
     BASEDIR, "offtargetDetection/casoffinder/offby6/CRISPRessoWGS/guideseq_anno"
 )
-STRELKARUNDIR = "/PHShome/mi825/Desktop/strelka_scratch"
+STRELKARUNDIR = tempfile.mkdtemp()
 CIRCLESEQ = os.path.join(BASEDIR, "offtargetDetection/circleseq/")
 BAMS = os.path.join(BASEDIR, "wgs/GM12878-Cas9/WGS1000/data/")
 GENOME = "/data/pinello/COMMON_DATA/REFERENCE_GENOMES/Broad/hg38/Homo_sapiens_assembly38.fasta"
@@ -87,7 +91,7 @@ def run_mutect2(exp_type, offregion):
             stop_col = 2
             name_col = 6
         else:  # circleseq
-            targets = os.path.join(CIRCLESEQ, "%s.circleseq.hg19.hg38" % (guide))
+            targets = os.path.join(CIRCLESEQ, "%s.circleseq.hg19.hg38.targetname" % (guide))
             outdir = os.path.join(outdir, "circleseq")
             chrom_col = 0
             start_col = 1
@@ -131,8 +135,6 @@ def run_mutect2(exp_type, offregion):
 def run_strelka(exp_type, offregion):
     """The function builds the commands to run strelka."""
     
-    # NB strelka runs under PY27, therefore we have to use python2 syntax
-    # in certain contexts
     commands = []  # commands array
     if not os.path.isdir(STRELKARUNDIR):
         os.mkdir(STRELKARUNDIR)
@@ -146,16 +148,16 @@ def run_strelka(exp_type, offregion):
             stop_col = 2
             name_col = 6
         else:  # circleseq
-            targets = os.path.join(CIRCLESEQ, "%s.circleseq.hg19.hg38" % (guide))
+            targets = os.path.join(CIRCLESEQ, "%s.circleseq.hg19.hg38.targetname" % (guide))
             outdir = os.path.join(outdir, "circleseq")
             chrom_col = 0
             start_col = 1
             stop_col = 2
-            name_col = 3
+            name_col = 12
         for cell_type in CELLTYPES:
             cmd = str(
                 "python %s --targets %s --genome %s --normal-bam %s --tumor-bam " 
-                "%s --chrom-col %d --start-col %d --stop-col %d --name-col %d "
+                "%s --chrom-col %d --start-col %d --stop-col %d --name-col %d %s "
                 "--run-dir %s --out %s"
             )
             if cell_type == "GM12878":
@@ -167,19 +169,80 @@ def run_strelka(exp_type, offregion):
             else:  # K562 cell type
                 bam1 = os.path.join(BAMS, "%s_%s.cram" % (cell_type, guide))
                 bam2 = os.path.join(BAMS, "K562_DNMT1Site3.cram")
-            outdir = os.path.join(outdir, cell_type)
+            odir = os.path.join(outdir, cell_type)
+            offr = ""
             if offregion:
-                outdir = os.path.join(outdir, "offregion", guide)
+                odir = os.path.join(odir, "offregion", guide)
+                offr = "--offregion"
             else: 
-                outdir = os.path.join(outdir, "onregion", guide)
+                odir = os.path.join(odir, "onregion", guide)
             commands.append(
                 cmd % (
-                    MUTECTPY, targets, GENOME, bam1, bam2, chrom_col, start_col, stop_col, name_col, STRELKARUNDIR, outdir
+                    STRELKAPY, targets, GENOME, bam1, bam2, chrom_col, start_col, stop_col, name_col, offr, STRELKARUNDIR, odir
                 )
             )
+    # run variant calling
+    for cmd in commands:
+        sys.stderr.write("\n\n%s\n\n" % (cmd))  # TODO: remove this line
+        code = subprocess.call(cmd, shell=True)
+        if code != 0:
+            raise OSError("An error ocuurred while running %s" % (cmd))
     code = subprocess.call("rm -rf %s" % (STRELKARUNDIR), shell=True)
     if code != 0:
         raise OSError("An error ocuurred while running %s" % (cmd))
+
+
+def run_pindel(exp_type, offregion):
+    """The function builds the commands to run pindel."""
+
+    commands = []  # commands array
+    for guide in GUIDES:
+        outdir = os.path.join(OUTDIR, "pindel")
+        if exp_type == "guideseq":
+            targets = os.path.join(GUIDESEQ, "%s.guideseq" % (guide))
+            outdir = os.path.join(outdir, "guideseq")
+            chrom_col = 0
+            start_col = 1
+            stop_col = 2
+        else:  # circleseq
+            targets = os.path.join(CIRCLESEQ, "%s.circleseq.hg19.hg38.targetname" % (guide))
+            outdir = os.path.join(outdir, "circleseq")
+            chrom_col = 0
+            start_col = 1
+            stop_col = 2
+        for cell_type in CELLTYPES:
+            cmd = str(
+                "python %s --targets %s --genome %s --normal-bam %s --normal-sample "
+                "%s --tumor-bam %s --tumor-sample %s --chrom-col %d --start-col %d "
+                "--stop-col %d %s --out %s"
+            )
+            if cell_type == "GM12878":
+                if guide == "EMX1":  # CRAM file, others in BAM format
+                    bam1 = os.path.join(BAMS, "%s.cram" % (guide))
+                else:
+                    bam1 = os.path.join(BAMS, "%s.bam" % (guide))
+                bam2 = os.path.join(BAMS, "DNMT1Site3.bam")
+            else:  # K562 cell type
+                bam1 = os.path.join(BAMS, "%s_%s.cram" % (cell_type, guide))
+                bam2 = os.path.join(BAMS, "K562_DNMT1Site3.cram")
+            odir = os.path.join(outdir, cell_type)
+            offr = ""
+            if offregion:
+                odir = os.path.join(odir, "offregion", guide)
+                offr = "--offregion"
+            else: 
+                odir = os.path.join(odir, "onregion", guide)
+            commands.append(
+                cmd % (
+                    PINDELPY, targets, GENOME, bam2, "DNMT1Site3", bam1, guide, chrom_col, start_col, stop_col, offr, odir
+                )
+            )
+    # run variant calling
+    for cmd in commands:
+        sys.stderr.write("\n\n%s\n\n" % (cmd))  # TODO: remove this line
+        code = subprocess.call(cmd, shell=True)
+        if code != 0:
+            raise OSError("An error ocuurred while running %s" % (cmd))
 
 
 def __runinfo(args):
@@ -199,7 +262,7 @@ def main():
     elif args.tool == VCALLINGTOOLS[1]:  # strelka
         run_strelka(args.type, args.offregion)  # run strelka
     elif args.tool == VCALLINGTOOLS[2]:  # pindel
-        pass  # run pindel
+        run_pindel(args.type, args.offregion)  # run pindel
     elif args.tool == VCALLINGTOOLS[3]:  # varscan
         pass  # run varscan
     else:

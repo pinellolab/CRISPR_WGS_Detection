@@ -15,8 +15,7 @@ PADSIZE = 10000
 
 
 def parse_commandline():
-    """The function parses the command line arguments.
-    """
+    """The function parses the command line arguments."""
 
     parser = argparse.ArgumentParser(
         formatter_class=argparse.RawTextHelpFormatter,
@@ -51,6 +50,13 @@ def parse_commandline():
     parser.add_argument(
         "--name-col", type=int, metavar="NAME-COL-NUM", help="Column containing target site name", dest="name_col"
     )
+    parser.add_argument(
+        "--offregion", 
+        action="store_true", 
+        default=False, 
+        help="Shift the target regions 100bp upstream and downstream (not "
+             "overlapping the original site)"
+    )
     parser.add_argument("--out", type=str, metavar="OUTDIR", help="Output directory")
     args = parser.parse_args()
     return args
@@ -69,24 +75,38 @@ def parse_targets(targetfile):
     return lines
 
 
-def compute_regions(lines, chrom_col, start_col, stop_col):
+def compute_regions(lines, chrom_col, start_col, stop_col, offregion):
     """The function computes the padded target regions"""
 
-    regions = [
-        "%s:%s-%s" % (
-            line[chrom_col], (int(line[start_col]) - PADSIZE), (int(line[start_col]) + PADSIZE)
-        )
-        for line in lines
-    ]
-    assert len(lines) == len(regions)
+    if offregion:  # upstream and downstream target sites shift
+        regions = [
+            "%s:%s-%s" % (
+                line[chrom_col], (int(line[start_col]) - 100 - PADSIZE), (int(line[start_col]) - 100)
+            )
+            for line in lines
+        ] + [
+            "%s:%s-%s" % (
+                line[chrom_col], (int(line[stop_col]) + 100), (int(line[stop_col]) + 100 + PADSIZE)
+            )
+            for line in lines
+        ]
+        assert len(regions) == (len(lines) * 2)
+    else:
+        regions = [
+            "%s:%s-%s" % (
+                line[chrom_col], (int(line[start_col]) - PADSIZE), (int(line[stop_col]) + PADSIZE)
+            )
+            for line in lines
+        ]
+        assert len(lines) == len(regions)
     return regions
 
 
-def get_names(lines, name_col):
+def get_names(regions):
     """The function returns a list containing the targets names."""
-     
-    names_list = [line[name_col] for line in lines]
-    assert len(names_list) == len(lines)
+    
+    names_list = [region.replace(":", "_").replace("-", "_") for region in regions]
+    assert len(names_list) == len(regions)
     return names_list
 
 
@@ -136,7 +156,7 @@ def main():
     # parse input targets file
     targets = parse_targets(args.targets)
     # recover regions
-    regions = compute_regions(targets, args.chrom_col, args.start_col, args.stop_col)
+    regions = compute_regions(targets, args.chrom_col, args.start_col, args.stop_co, args.offregion)
     # run strelka
     names = get_names(targets, args.name_col)
     for i, region in enumerate(regions):
