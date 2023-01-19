@@ -111,9 +111,7 @@ def mpileup(bam, genome, region, outfile):
     cmd = "%s -f %s -d %d -r %s %s > %s" % (SAMTOOLS, genome, 0, region, bam, outfile)
     code = subprocess.call(cmd, shell=True)
     if code != 0:
-        raise subprocess.SubprocessError(
-            "An error occurred while running \"%s\"" % (cmd)
-        )
+        raise OSError("An error occurred while running \"%s\"" % (cmd))
     assert os.stat(outfile).st_size > 0
     return outfile
 
@@ -135,8 +133,13 @@ def varscan(genome, normal_bam, tumor_bam, region, outdir, name):
     )
     code = subprocess.call(cmd, shell=True)
     if code != 0:
-        raise subprocess.SubprocessError("An error occurred while running %s" % (cmd))
+        raise OSError("An error occurred while running %s" % (cmd))
+    # delete the mpileup files
+    cmd = "rm -rf %s %s" % (mpileup_normal, mpileup_tumor)
+    if code != 0:
+        raise OSError("An error occurred while running %s" % (cmd))
     
+
 
 def main():
     args = parse_commandline()
@@ -153,7 +156,7 @@ def main():
     cmd = "rm -rf %s" % (SAMTOOLSTMP)
     code = subprocess.call(cmd, shell=True)
     if code != 0:
-        raise subprocess.SubprocessError("AN error occurred while running %s" % (cmd))
+        raise OSError("AN error occurred while running %s" % (cmd))
     assert not os.path.exists(SAMTOOLSTMP)
 
 

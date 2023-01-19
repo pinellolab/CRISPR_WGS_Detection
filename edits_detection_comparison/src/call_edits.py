@@ -17,11 +17,9 @@ MUTECTPY = os.path.join(SCRIPTS, "run_mutect.py")
 STRELKAPY = os.path.join(SCRIPTS, "run_strelka.py")
 PINDELPY = os.path.join(SCRIPTS, "run_pindel.py")
 VARSCANPY = os.path.join(SCRIPTS, "run_varscan.py")
-# GUIDES = ["EMX1", "HEKSite4", "RNF2", "VEGFASite3"]
-GUIDES = ["VEGFASite3"]
+GUIDES = ["EMX1", "HEKSite4", "RNF2", "VEGFASite3"]
 VCALLINGTOOLS = ["mutect2", "strelka", "pindel", "varscan"]
-# CELLTYPES = ["GM12878", "K562"]
-CELLTYPES = ["K562"]
+CELLTYPES = ["GM12878", "K562"]
 BASEDIR = "/data/pinello/PROJECTS/2017_07_DARPA_SIMULATIONS/"
 GUIDESEQ = os.path.join(
     BASEDIR, "offtargetDetection/casoffinder/offby6/CRISPRessoWGS/guideseq_anno"
