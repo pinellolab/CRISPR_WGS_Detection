@@ -16,11 +16,12 @@ SCRIPTS = "/PHShome/mi825/Desktop/wgs_crisprcas9/src/"
 MUTECTPY = os.path.join(SCRIPTS, "run_mutect.py")
 STRELKAPY = os.path.join(SCRIPTS, "run_strelka.py")
 PINDELPY = os.path.join(SCRIPTS, "run_pindel.py")
+VARSCANPY = os.path.join(SCRIPTS, "run_varscan.py")
 # GUIDES = ["EMX1", "HEKSite4", "RNF2", "VEGFASite3"]
-GUIDES = ["HEKSite4", "RNF2", "VEGFASite3"]
+GUIDES = ["VEGFASite3"]
 VCALLINGTOOLS = ["mutect2", "strelka", "pindel", "varscan"]
 # CELLTYPES = ["GM12878", "K562"]
-CELLTYPES = ["GM12878"]
+CELLTYPES = ["K562"]
 BASEDIR = "/data/pinello/PROJECTS/2017_07_DARPA_SIMULATIONS/"
 GUIDESEQ = os.path.join(
     BASEDIR, "offtargetDetection/casoffinder/offby6/CRISPRessoWGS/guideseq_anno"
@@ -245,6 +246,58 @@ def run_pindel(exp_type, offregion):
             raise OSError("An error ocuurred while running %s" % (cmd))
 
 
+def run_varscan(exp_type, offregion):
+    """The function builds the command to run varscan."""
+
+    commands = []  # commands array
+    for guide in GUIDES:
+        outdir = os.path.join(OUTDIR, "varscan")
+        if exp_type == "guideseq":
+            targets = os.path.join(GUIDESEQ, "%s.guideseq" % (guide))
+            outdir = os.path.join(outdir, "guideseq")
+            chrom_col = 0
+            start_col = 1
+            stop_col = 2
+        else:  # circleseq
+            targets = os.path.join(CIRCLESEQ, "%s.circleseq.hg19.hg38.targetname" % (guide))
+            outdir = os.path.join(outdir, "circleseq")
+            chrom_col = 0
+            start_col = 1
+            stop_col = 2
+        for cell_type in CELLTYPES:
+            cmd = str(
+                "python %s --targets %s --genome %s --normal-bam %s --tumor-bam %s "
+                "--chrom-col %d --start-col %d --stop-col %d %s --out %s"
+            )
+            if cell_type == "GM12878":
+                if guide == "EMX1":  # CRAM file, others in BAM format
+                    bam1 = os.path.join(BAMS, "%s.cram" % (guide))
+                else:
+                    bam1 = os.path.join(BAMS, "%s.bam" % (guide))
+                bam2 = os.path.join(BAMS, "DNMT1Site3.bam")
+            else:  # K562 cell type
+                bam1 = os.path.join(BAMS, "%s_%s.cram" % (cell_type, guide))
+                bam2 = os.path.join(BAMS, "K562_DNMT1Site3.cram")
+            odir = os.path.join(outdir, cell_type)
+            offr = ""
+            if offregion:
+                odir = os.path.join(odir, "offregion", guide)
+                offr = "--offregion"
+            else: 
+                odir = os.path.join(odir, "onregion", guide)
+            commands.append(
+                cmd % (
+                    VARSCANPY, targets, GENOME, bam2, bam1, chrom_col, start_col, stop_col, offr, odir
+                )
+            )
+    # run variant calling
+    for cmd in commands:
+        sys.stderr.write("\n\n%s\n\n" % (cmd))  # TODO: remove this line
+        code = subprocess.call(cmd, shell=True)
+        if code != 0:
+            raise OSError("An error ocuurred while running %s" % (cmd))
+
+
 def __runinfo(args):
     """Print the current run info."""
 
@@ -264,7 +317,7 @@ def main():
     elif args.tool == VCALLINGTOOLS[2]:  # pindel
         run_pindel(args.type, args.offregion)  # run pindel
     elif args.tool == VCALLINGTOOLS[3]:  # varscan
-        pass  # run varscan
+        run_varscan(args.type, args.offregion)  # run varscan
     else:
         raise ValueError(
             "%s cannot run %s. Check the help for the available tools" % (
