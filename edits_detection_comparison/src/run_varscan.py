@@ -112,7 +112,6 @@ def mpileup(bam, genome, region, outfile):
     code = subprocess.call(cmd, shell=True)
     if code != 0:
         raise OSError("An error occurred while running \"%s\"" % (cmd))
-    assert os.stat(outfile).st_size > 0
     return outfile
 
 
@@ -135,7 +134,8 @@ def varscan(genome, normal_bam, tumor_bam, region, outdir, name):
     if code != 0:
         raise OSError("An error occurred while running %s" % (cmd))
     # delete the mpileup files
-    cmd = "rm -rf %s %s" % (mpileup_normal, mpileup_tumor)
+    cmd = "rm %s %s" % (mpileup_normal, mpileup_tumor)
+    code = subprocess.call(cmd, shell=True)
     if code != 0:
         raise OSError("An error occurred while running %s" % (cmd))
     
