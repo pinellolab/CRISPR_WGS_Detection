@@ -22,6 +22,7 @@ EDITS = os.path.join(
     BASEDIR, 
     "wgs/GM12878-Cas9/WGS1000/detectWithOtherTools/manuel_experiments/VCFs"
 )
+# TODO: remove --out 
 # REPORTS = os.path.join(
 #     BASEDIR, 
 #     "wgs/GM12878-Cas9/WGS1000/detectWithOtherTools/manuel_experiments/reports"
@@ -88,7 +89,7 @@ def parse_commandline() -> argparse.ArgumentParser:
     return args
 
 
-def __read_targets(exp_type: str, guide: str) -> pd.DataFrame:
+def read_targets(exp_type: str, guide: str) -> pd.DataFrame:
     """ (PRIVATE) 
 
     The function parses the target sites file.
@@ -125,7 +126,7 @@ def __read_targets(exp_type: str, guide: str) -> pd.DataFrame:
     return targets
 
 
-def __read_vcf(vcf: str) -> List[List]:
+def read_vcf(vcf: str) -> List[List]:
     """ (PRIVATE)
 
     The function parses the input VCF.
@@ -158,7 +159,7 @@ def __read_vcf(vcf: str) -> List[List]:
     return variants
 
 
-def __edits_dataframe(edits: List, target_sites: List) -> pd.DataFrame:
+def edits_dataframe(edits: List, target_sites: List) -> pd.DataFrame:
     """ (PRIVATE) 
 
     The function constructs a dataframe from the parsed edits.
@@ -341,7 +342,7 @@ def edit_location(
 
 def report_mutect2(
     exp_type: str, guide: str, cell_type: str, outdir: str, offregion: bool
-) -> pd.DataFrame:
+) -> None:
     """ The function construct the edits report using the variants called by 
     Mutect2.
 
@@ -377,16 +378,15 @@ def report_mutect2(
     if cell_type not in CELLTYPES:
         raise ValueError(f"Forbidden cell type ({cell_type})")
     # read target sites
-    targets = __read_targets(exp_type, guide)
+    targets = read_targets(exp_type, guide)
     # parse VCFs 
     region = "offregion" if offregion else "onregion"
     edits_dir = os.path.join(EDITS, VCALLINGTOOLS[0], exp_type, cell_type, region, guide)
-    tqdm.pandas()  # track progress during df apply
     if exp_type == EXPERIMENTS[0]:  # circleseq
         if offregion:
             # parse edits upstream (offregion)
-            edits_upstream = targets.progress_apply(
-                lambda x : __read_vcf(
+            edits_upstream = targets.apply(
+                lambda x : read_vcf(
                     os.path.join(
                         edits_dir,
                         f"{x[-1]}.{x[0]}:{int(x[1]) - 100 - PADSIZE}-{int(x[1]) - 100}.vcf.filtered.vcf"
@@ -395,8 +395,8 @@ def report_mutect2(
                 axis=1
             )
             # parse edits downstream (offregion)
-            edits_downstream = targets.progress_apply(
-                lambda x : __read_vcf(
+            edits_downstream = targets.apply(
+                lambda x : read_vcf(
                     os.path.join(
                         edits_dir,
                         f"{x[-1]}.{x[0]}:{int(x[2]) + 100}-{int(x[2]) + 100 + PADSIZE}.vcf.filtered.vcf"
@@ -405,8 +405,8 @@ def report_mutect2(
                 axis=1
             )
         else:
-            edits = targets.progress_apply(
-                lambda x : __read_vcf(
+            edits = targets.apply(
+                lambda x : read_vcf(
                     os.path.join(
                         edits_dir, 
                         f"{x[-1]}.{x[0]}:{int(x[1]) - PADSIZE}-{int(x[2]) + PADSIZE}.vcf.filtered.vcf"
@@ -417,8 +417,8 @@ def report_mutect2(
     else:  # guideseq
         if offregion:
             # parse edits upstream (offregion)
-            edits_upstream = targets.progress_apply(
-                lambda x : __read_vcf(
+            edits_upstream = targets.apply(
+                lambda x : read_vcf(
                     os.path.join(
                         edits_dir,
                         f"{x[6]}.{x[0]}:{int(x[1]) - 100 - PADSIZE}-{int(x[1]) - 100}.vcf.filtered.vcf"
@@ -427,8 +427,8 @@ def report_mutect2(
                 axis=1
             )
             # parse edits downstream (offregion)
-            edits_downstream = targets.progress_apply(
-                lambda x : __read_vcf(
+            edits_downstream = targets.apply(
+                lambda x : read_vcf(
                     os.path.join(
                         edits_dir,
                         f"{x[6]}.{x[0]}:{int(x[2]) + 100}-{int(x[2]) + 100 + PADSIZE}.vcf.filtered.vcf"
@@ -437,8 +437,8 @@ def report_mutect2(
                 axis=1
             )
         else:
-            edits = targets.progress_apply(
-                lambda x : __read_vcf(
+            edits = targets.apply(
+                lambda x : read_vcf(
                     os.path.join(
                         edits_dir, 
                         f"{x[6]}.{x[0]}:{int(x[1]) - PADSIZE}-{int(x[2]) + PADSIZE}.vcf.filtered.vcf"
@@ -450,12 +450,12 @@ def report_mutect2(
     if offregion:
         edits = pd.concat(
                 [
-                    __edits_dataframe(edits_upstream, targets.SITE.tolist()),
-                    __edits_dataframe(edits_downstream, targets.SITE.tolist())
+                    edits_dataframe(edits_upstream, targets.SITE.tolist()),
+                    edits_dataframe(edits_downstream, targets.SITE.tolist())
                 ]
             )
     else:
-        edits = __edits_dataframe(edits, targets.SITE.tolist())
+        edits = edits_dataframe(edits, targets.SITE.tolist())
     # assign edit type (insertion, deletion, or snv)
     edits["TYPE"] = edits.apply(lambda x : assign_etype(x[4], x[5]), axis=1)
     # join targets and edits datasets
@@ -492,14 +492,179 @@ def report_mutect2(
     edits.to_csv(outfile, sep="\t", index=False)
 
 
+def report_strelka(
+    exp_type: str, guide: str, cell_type: str, outdir: str, offregion: bool
+) -> None:
+    """ The function construct the edits report using the variants called by 
+    Mutect2.
+
+    ...
+
+    Parameters
+    ----------
+    exp_type
+        Experiment type
+    guide 
+        Input guide
+    cell_type
+        Cell type
+    outdir
+        Output directory
+    offregion   
+
+    Returns
+    -------
+    pd.DataFrame
+    """
+    
+    if not isinstance(exp_type, str):
+        raise TypeError(f"Expected {str.__name__}, got {type(exp_type).__name__}")
+    if exp_type not in EXPERIMENTS:
+        raise ValueError(f"Forbidden experiment type ({exp_type})")
+    if not isinstance(guide, str):
+        raise TypeError(f"Expected {str.__name__}, got {type(guide).__name__}")
+    if not guide in GUIDES:
+        raise ValueError(f"Forbidden guide ({guide})")
+    if not isinstance(cell_type, str):
+        raise TypeError(f"Expected {str.__name__}, got {type(cell_type).__name__}")
+    if cell_type not in CELLTYPES:
+        raise ValueError(f"Forbidden cell type ({cell_type})")
+    # read the target sites
+    targets = read_targets(exp_type, guide)
+    # parse VCFs
+    region = "offregion" if offregion else "onregion"
+    edits_dir = os.path.join(EDITS, VCALLINGTOOLS[1], exp_type, cell_type, region, guide)
+    if offregion:
+        edits_upstream_snvs = targets.apply(
+                lambda x : read_vcf(
+                    os.path.join(
+                        edits_dir,
+                        f"{x[0]}_{int(x[1]) - 100 - PADSIZE}_{int(x[1]) - 100}_somatic.snvs.vcf"
+                    )
+                ),
+                axis=1
+            )
+        edits_upstream_indels = targets.apply(
+            lambda x : read_vcf(
+                os.path.join(
+                    edits_dir,
+                    f"{x[0]}_{int(x[1]) - 100 - PADSIZE}_{int(x[1]) - 100}_somatic.indels.vcf"
+                )
+            ),
+            axis=1
+        )
+        edits_downstream_snvs = targets.apply(
+            lambda x : read_vcf(
+                os.path.join(
+                    edits_dir,
+                    f"{x[0]}_{int(x[2]) + 100}_{int(x[2]) + 100 + PADSIZE}_somatic.snvs.vcf"
+                )
+            ),
+            axis=1
+        )
+        edits_downstream_indels = targets.apply(
+            lambda x : read_vcf(
+                os.path.join(
+                    edits_dir,
+                    f"{x[0]}_{int(x[2]) + 100}_{int(x[2]) + 100 + PADSIZE}_somatic.indels.vcf"
+                )
+            ),
+            axis=1
+        )
+    else:
+        edits_snvs = targets.apply(
+                lambda x : read_vcf(
+                    os.path.join(
+                        edits_dir,
+                        f"{x[0]}_{int(x[1]) - PADSIZE}_{int(x[2]) + PADSIZE}_somatic.snvs.vcf"
+                    )
+                ),
+                axis=1 
+            )
+        edits_indels = targets.apply(
+            lambda x : read_vcf(
+                os.path.join(
+                    edits_dir,
+                    f"{x[0]}_{int(x[1]) - PADSIZE}_{int(x[2]) + PADSIZE}_somatic.indels.vcf"
+                )
+            ),
+            axis=1
+        )
+    # build the edits dataframe
+    if offregion:
+        edits = pd.concat(
+            pd.concat(
+                [
+                    edits_dataframe(edits_upstream_snvs, targets.SITE.tolist()),
+                    edits_dataframe(edits_upstream_indels, targets.SITE.tolist())
+                ]
+            ),
+            pd.concat(
+                [
+                    edits_dataframe(edits_downstream_snvs, targets.SITE.tolist()),
+                    edits_dataframe(edits_downstream_indels, targets.SITE.tolist())
+                ]
+            )
+        )
+    else:
+        edits = pd.concat(
+            [
+                edits_dataframe(edits_snvs, targets.SITE.tolist()),
+                edits_dataframe(edits_indels, targets.SITE.tolist())
+            ]
+        )
+    if not edits.empty:  # following operations only if edits have been called
+        # assign edit type (insertion, deletion, or snv)
+        edits["TYPE"] = edits.apply(lambda x : assign_etype(x[4], x[5]), axis=1)
+        # join targets and edits dataset
+        edits = edits.merge(targets, on="SITE")
+        # keep only columns of interest
+        if exp_type == EXPERIMENTS[0]:  # circleseq
+            keep = [
+                "SITE", "CHROM", "POS", "REF", "ALT", "FILTER", "TYPE", "Start", "End", "Strand", "Distance"
+            ]
+        else:  # guideseq
+            keep = [
+                "SITE", "CHROM", "POS", "REF", "ALT", "FILTER", "TYPE", "start", "end", "Strand", "Mismatch Total"
+            ]
+        edits = edits[keep]
+        edits.columns = [
+            "SITE", "CHROM", "VAR-POS", "REF", "ALT", "FILTER", "TYPE", "TARGET-START", "TARGET-STOP", "STRAND", "MISMATCHES"
+        ]  # rename columns
+        # compute the distance between the called edits and their target site
+        edits["START-DISTANCE"] = edits.apply(
+            lambda x : compute_distance(int(x[2]), int(x[7])), axis=1
+        )
+        edits["STOP-DISTANCE"] = edits.apply(
+            lambda x : compute_distance(int(x[2]), int(x[8])), axis=1
+        )
+        # assess if the edits occurred inside the expected target sites
+        edits["FLAG"] = edits.apply(
+            lambda x : edit_location(int(x[2]), int(x[7]), int(x[8]), x[3], x[4], x[6]),
+            axis=1
+        )
+    else:
+        columns = [
+            "SITE", "CHROM", "VAR-POS", "REF", "ALT", "FILTER", "TYPE", "TARGET-START", "TARGET-STOP", "STRAND", "MISMATCHES"
+        ]
+        edits = pd.DataFrame(columns=columns)
+    # write the report
+    outfile = os.path.join(
+        outdir, f"{VCALLINGTOOLS[1]}_{exp_type}_{cell_type}_{guide}_{region}.tsv"
+    )
+    edits.to_csv(outfile, sep="\t", index=False)
+
+
 def main():
     args = parse_commandline()
     if args.tool == VCALLINGTOOLS[0]:  # mutect2
-        for cell_type in CELLTYPES:
-            for guide in GUIDES:
+        for guide in tqdm(GUIDES):
+            for cell_type in CELLTYPES:
                 report_mutect2(args.type, guide, cell_type, args.out, args.offregion)
     elif args.tool == VCALLINGTOOLS[1]:  # strelka
-        pass
+        for guide in tqdm(GUIDES):
+            for cell_type in CELLTYPES:
+                report_strelka(args.type, guide, cell_type, args.out, args.offregion)
     elif args.tool == VCALLINGTOOLS[2]:  # pindel
         pass
     elif args.tool == VCALLINGTOOLS[3]:  # varscan
