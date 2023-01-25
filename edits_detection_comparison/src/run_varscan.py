@@ -160,7 +160,7 @@ def varscan(genome, normal_bam, tumor_bam, region, outdir, name):
     )
     # call varscan
     outfile = os.path.join(outdir, name)
-    cmd = "%s %s %s %s --min-var-freq 0.0001" % (
+    cmd = "%s %s %s %s --min-var-freq 0.0001 --output-vcf 1 --strand-filter 1" % (
         VARSCAN,
         mpileup_normal,
         mpileup_tumor,

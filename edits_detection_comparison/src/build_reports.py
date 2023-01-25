@@ -151,7 +151,9 @@ def read_vcf(vcf: str) -> List[List]:
     return variants
 
 
-def __recover_depth(edit: List, normal: Optional[bool] = True) -> int:
+def __recover_depth(
+    edit: List, depth: str, normal: Optional[bool] = True, reference: Optional[bool] = True
+) -> int:
     """(PRIVATE)
 
     The function recovers the read depth supporting the reference and
@@ -163,22 +165,42 @@ def __recover_depth(edit: List, normal: Optional[bool] = True) -> int:
     ----------
     edit
         Input edit
+    depth
+        Read depth type <"AD", "DP">
     normal
+    reference
 
     Returns
     -------
     int
     """
 
-    assert len(edit) == 11  # each edit contains exactly 10 fields
-    # get the position where the read depth is stored
-    dpidx = edit[8].split(":").index("DP")
-    if normal:
-        return int(edit[9].split(":")[dpidx])
-    return int(edit[10].split(":")[dpidx])
+    if not isinstance(depth, str):
+        raise TypeError(f"Expected {str.__name__}, got {type(depth).__name__}")
+    if depth not in ["AD", "DP"]:
+        raise ValueError(f"Forbidden read depth read ({depth})")
+    assert len(edit) == 11  # each edit contains exactly 11 fields
+    depthidx = edit[8].split(":").index(depth)
+    if depth == "DP":  # read depth
+        if normal:  # normal condition
+            return int(edit[9].split(":")[depthidx])
+        return int(edit[10].split(":")[depthidx])  # tumor condition
+    else:  # allele depth
+        if normal:  # normal condition
+            if reference:  # reads supporting ref allele
+                return int(edit[9].split(":")[depthidx].split(",")[0])
+            # reads supporting alt allele
+            return int(edit[9].split(":")[depthidx].split(",")[1]) 
+        else:  # tumor condition
+            if reference:  # reads supporting ref allele
+                return int(edit[10].split(":")[depthidx].split(",")[0])
+            # reads supporting alt allele
+            return int(edit[10].split(":")[depthidx].split(",")[1]) 
 
 
-def edits_dataframe(edits: List, target_sites: List) -> pd.DataFrame:
+def edits_dataframe(
+    edits: List, target_sites: List, strelka: Optional[bool] = False
+) -> pd.DataFrame:
     """The function constructs a dataframe from the parsed edits.
 
     ...
@@ -189,6 +211,7 @@ def edits_dataframe(edits: List, target_sites: List) -> pd.DataFrame:
         List of parsed edits
     target_sites
         List of target sites
+    strelka
 
     Returns
     -------
@@ -205,8 +228,12 @@ def edits_dataframe(edits: List, target_sites: List) -> pd.DataFrame:
         "REF": [],
         "ALT": [],
         "FILTER": [],
-        "DP-REF": [],
-        "DP-ALT": [],
+        "DP-NORMAL": [],
+        "DP-TUMOR": [],
+        "AD-NORMAL-REF": [],
+        "AD-NORMAL-ALT": [],
+        "AD-TUMOR-REF": [],
+        "AD-TUMOR-ALT": []
     }
     for i, tse in enumerate(edits):
         if bool(tse):  # skip target sites without called edits
@@ -218,8 +245,18 @@ def edits_dataframe(edits: List, target_sites: List) -> pd.DataFrame:
                 edf["REF"].append(e[3])
                 edf["ALT"].append(e[4])
                 edf["FILTER"].append(e[6])
-                edf["DP-REF"].append(__recover_depth(e))
-                edf["DP-ALT"].append(__recover_depth(e, False))
+                edf["DP-NORMAL"].append(__recover_depth(e, "DP", normal=True))
+                edf["DP-TUMOR"].append(__recover_depth(e, "DP", normal=False))
+                if strelka:  # strelka does not report AD
+                    edf["AD-NORMAL-REF"].append(0)
+                    edf["AD-NORMAL-ALT"].append(0)
+                    edf["AD-TUMOR-REF"].append(0)
+                    edf["AD-TUMOR-ALT"].append(0)
+                else:
+                    edf["AD-NORMAL-REF"].append(__recover_depth(e, "AD", normal=True, reference=True))
+                    edf["AD-NORMAL-ALT"].append(__recover_depth(e, "AD", normal=True, reference=False))
+                    edf["AD-TUMOR-REF"].append(__recover_depth(e, "AD", normal=False, reference=True))
+                    edf["AD-TUMOR-ALT"].append(__recover_depth(e, "AD", normal=False, reference=False))
     edf = pd.DataFrame(edf)  # build dataframe from dict
     if edf.empty and any([bool(tse) for tse in edits]):
         raise ValueError(f"DataFrame is empty, but some edits have been called")
@@ -393,7 +430,7 @@ def report_mutect2(
 
     Returns
     -------
-    pd.DataFrame
+    None
     """
 
     if not isinstance(exp_type, str):
@@ -503,8 +540,12 @@ def report_mutect2(
                 "REF",
                 "ALT",
                 "FILTER",
-                "DP-REF",
-                "DP-ALT",
+                "DP-NORMAL",
+                "DP-TUMOR",
+                "AD-NORMAL-REF",
+                "AD-NORMAL-ALT",
+                "AD-TUMOR-REF",
+                "AD-TUMOR-ALT",
                 "TYPE",
                 "Start",
                 "End",
@@ -519,8 +560,12 @@ def report_mutect2(
                 "REF",
                 "ALT",
                 "FILTER",
-                "DP-REF",
-                "DP-ALT",
+                "DP-NORMAL",
+                "DP-TUMOR",
+                "AD-NORMAL-REF",
+                "AD-NORMAL-ALT",
+                "AD-TUMOR-REF",
+                "AD-TUMOR-ALT",
                 "TYPE",
                 "start",
                 "end",
@@ -535,8 +580,12 @@ def report_mutect2(
             "REF",
             "ALT",
             "FILTER",
-            "DP-REF",
-            "DP-ALT",
+            "DP-NORMAL",
+            "DP-TUMOR",
+            "AD-NORMAL-REF",
+            "AD-NORMAL-ALT",
+            "AD-TUMOR-REF",
+            "AD-TUMOR-ALT",
             "TYPE",
             "TARGET-START",
             "TARGET-STOP",
@@ -545,14 +594,14 @@ def report_mutect2(
         ]  # rename columns
         # compute the distance between the called edits and their target site
         edits["START-DISTANCE"] = edits.apply(
-            lambda x: compute_distance(int(x[2]), int(x[9])), axis=1
+            lambda x: compute_distance(int(x[2]), int(x[13])), axis=1
         )
         edits["STOP-DISTANCE"] = edits.apply(
-            lambda x: compute_distance(int(x[2]), int(x[10])), axis=1
+            lambda x: compute_distance(int(x[2]), int(x[14])), axis=1
         )
         # assess if the edits occurred inside the expected target sites
         edits["FLAG"] = edits.apply(
-            lambda x: edit_location(int(x[2]), int(x[9]), int(x[10]), x[3], x[4], x[8]),
+            lambda x: edit_location(int(x[2]), int(x[13]), int(x[14]), x[3], x[4], x[12]),
             axis=1,
         )
     else:
@@ -563,8 +612,12 @@ def report_mutect2(
             "REF",
             "ALT",
             "FILTER",
-            "DP-REF",
-            "DP-ALT",
+            "DP-NORMAL",
+            "DP-TUMOR",
+            "AD-NORMAL-REF",
+            "AD-NORMAL-ALT",
+            "AD-TUMOR-REF",
+            "AD-TUMOR-ALT",
             "TYPE",
             "TARGET-START",
             "TARGET-STOP",
@@ -583,7 +636,7 @@ def report_strelka(
     exp_type: str, guide: str, cell_type: str, outdir: str, offregion: bool
 ) -> None:
     """The function construct the edits report using the variants called by
-    Mutect2.
+    strelka.
 
     ...
 
@@ -601,7 +654,7 @@ def report_strelka(
 
     Returns
     -------
-    pd.DataFrame
+    None
     """
 
     if not isinstance(exp_type, str):
@@ -684,22 +737,22 @@ def report_strelka(
         edits = pd.concat(
             pd.concat(
                 [
-                    edits_dataframe(edits_upstream_snvs, targets.SITE.tolist()),
-                    edits_dataframe(edits_upstream_indels, targets.SITE.tolist()),
+                    edits_dataframe(edits_upstream_snvs, targets.SITE.tolist(), strelka=True),
+                    edits_dataframe(edits_upstream_indels, targets.SITE.tolist(), strelka=True),
                 ]
             ),
             pd.concat(
                 [
-                    edits_dataframe(edits_downstream_snvs, targets.SITE.tolist()),
-                    edits_dataframe(edits_downstream_indels, targets.SITE.tolist()),
+                    edits_dataframe(edits_downstream_snvs, targets.SITE.tolist(), strelka=True),
+                    edits_dataframe(edits_downstream_indels, targets.SITE.tolist(), strelka=True),
                 ]
             ),
         )
     else:
         edits = pd.concat(
             [
-                edits_dataframe(edits_snvs, targets.SITE.tolist()),
-                edits_dataframe(edits_indels, targets.SITE.tolist()),
+                edits_dataframe(edits_snvs, targets.SITE.tolist(), strelka=True),
+                edits_dataframe(edits_indels, targets.SITE.tolist(), strelka=True),
             ]
         )
     if not edits.empty:  # following operations only if edits have been called
@@ -716,8 +769,12 @@ def report_strelka(
                 "REF",
                 "ALT",
                 "FILTER",
-                "DP-REF",
-                "DP-ALT",
+                "DP-NORMAL",
+                "DP-TUMOR",
+                "AD-NORMAL-REF",
+                "AD-NORMAL-ALT",
+                "AD-TUMOR-REF",
+                "AD-TUMOR-ALT",
                 "TYPE",
                 "Start",
                 "End",
@@ -732,8 +789,12 @@ def report_strelka(
                 "REF",
                 "ALT",
                 "FILTER",
-                "DP-REF",
-                "DP-ALT",
+                "DP-NORMAL",
+                "DP-TUMOR",
+                "AD-NORMAL-REF",
+                "AD-NORMAL-ALT",
+                "AD-TUMOR-REF",
+                "AD-TUMOR-ALT",
                 "TYPE",
                 "start",
                 "end",
@@ -748,8 +809,12 @@ def report_strelka(
             "REF",
             "ALT",
             "FILTER",
-            "DP-REF",
-            "DP-ALT",
+            "DP-NORMAL",
+            "DP-TUMOR",
+            "AD-NORMAL-REF",
+            "AD-NORMAL-ALT",
+            "AD-TUMOR-REF",
+            "AD-TUMOR-ALT",
             "TYPE",
             "TARGET-START",
             "TARGET-STOP",
@@ -758,14 +823,14 @@ def report_strelka(
         ]  # rename columns
         # compute the distance between the called edits and their target site
         edits["START-DISTANCE"] = edits.apply(
-            lambda x: compute_distance(int(x[2]), int(x[7])), axis=1
+            lambda x: compute_distance(int(x[2]), int(x[13])), axis=1
         )
         edits["STOP-DISTANCE"] = edits.apply(
-            lambda x: compute_distance(int(x[2]), int(x[8])), axis=1
+            lambda x: compute_distance(int(x[2]), int(x[14])), axis=1
         )
         # assess if the edits occurred inside the expected target sites
         edits["FLAG"] = edits.apply(
-            lambda x: edit_location(int(x[2]), int(x[7]), int(x[8]), x[3], x[4], x[6]),
+            lambda x: edit_location(int(x[2]), int(x[13]), int(x[14]), x[3], x[4], x[12]),
             axis=1,
         )
     else:
@@ -776,8 +841,12 @@ def report_strelka(
             "REF",
             "ALT",
             "FILTER",
-            "DP-REF",
-            "DP-ALT",
+            "DP-NORMAL",
+            "DP-TUMOR",
+            "AD-NORMAL-REF",
+            "AD-NORMAL-ALT",
+            "AD-TUMOR-REF",
+            "AD-TUMOR-ALT",
             "TYPE",
             "TARGET-START",
             "TARGET-STOP",
@@ -790,6 +859,32 @@ def report_strelka(
         outdir, f"{VCALLINGTOOLS[1]}_{exp_type}_{cell_type}_{guide}_{region}.tsv"
     )
     edits.to_csv(outfile, sep="\t", index=False)
+
+
+def report_varscan(
+    exp_type: str, guide: str, cell_type: str, outdir: str, offregion: bool
+) -> None:
+    """The function construct the edits report using the variants called by
+    Varscan.
+
+    ...
+
+    Parameters
+    ----------
+    exp_type
+        Experiment type
+    guide
+        Input guide
+    cell_type
+        Cell type
+    outdir
+        Output directory
+    offregion
+
+    Returns
+    -------
+    None
+    """
 
 
 def main():
