@@ -152,7 +152,11 @@ def read_vcf(vcf: str) -> List[List]:
 
 
 def __recover_depth(
-    edit: List, depth: str, normal: Optional[bool] = True, reference: Optional[bool] = True
+    edit: List, 
+    depth: str, 
+    normal: Optional[bool] = True, 
+    reference: Optional[bool] = True,
+    varscan: Optional[bool] = False
 ) -> int:
     """(PRIVATE)
 
@@ -169,6 +173,7 @@ def __recover_depth(
         Read depth type <"AD", "DP">
     normal
     reference
+    varscan
 
     Returns
     -------
@@ -188,18 +193,33 @@ def __recover_depth(
     else:  # allele depth
         if normal:  # normal condition
             if reference:  # reads supporting ref allele
+                if varscan:  # varscan has explicit allele read count
+                    depthidx = edit[8].split(":").index("RD")
+                    return int(edit[9].split(":")[depthidx])
                 return int(edit[9].split(":")[depthidx].split(",")[0])
             # reads supporting alt allele
+            if varscan:  # varscan has explicit allele read count
+                depthidx = edit[8].split(":").index("AD")
+                return int(edit[9].split(":")[depthidx])
             return int(edit[9].split(":")[depthidx].split(",")[1]) 
         else:  # tumor condition
             if reference:  # reads supporting ref allele
+                if varscan:  # varscan has explicit allele read count
+                    depthidx = edit[8].split(":").index("RD")
+                    return int(edit[10].split(":")[depthidx])
                 return int(edit[10].split(":")[depthidx].split(",")[0])
             # reads supporting alt allele
+            if varscan:  # varscan has explicit allele read count
+                depthidx = edit[8].split(":").index("AD")
+                return int(edit[10].split(":")[depthidx])
             return int(edit[10].split(":")[depthidx].split(",")[1]) 
 
 
 def edits_dataframe(
-    edits: List, target_sites: List, strelka: Optional[bool] = False
+    edits: List, 
+    target_sites: List, 
+    strelka: Optional[bool] = False,
+    varscan: Optional[bool] = False
 ) -> pd.DataFrame:
     """The function constructs a dataframe from the parsed edits.
 
@@ -212,6 +232,7 @@ def edits_dataframe(
     target_sites
         List of target sites
     strelka
+    varscan
 
     Returns
     -------
@@ -253,10 +274,10 @@ def edits_dataframe(
                     edf["AD-TUMOR-REF"].append(0)
                     edf["AD-TUMOR-ALT"].append(0)
                 else:
-                    edf["AD-NORMAL-REF"].append(__recover_depth(e, "AD", normal=True, reference=True))
-                    edf["AD-NORMAL-ALT"].append(__recover_depth(e, "AD", normal=True, reference=False))
-                    edf["AD-TUMOR-REF"].append(__recover_depth(e, "AD", normal=False, reference=True))
-                    edf["AD-TUMOR-ALT"].append(__recover_depth(e, "AD", normal=False, reference=False))
+                    edf["AD-NORMAL-REF"].append(__recover_depth(e, "AD", normal=True, reference=True, varscan=varscan))
+                    edf["AD-NORMAL-ALT"].append(__recover_depth(e, "AD", normal=True, reference=False, varscan=varscan))
+                    edf["AD-TUMOR-REF"].append(__recover_depth(e, "AD", normal=False, reference=True, varscan=varscan))
+                    edf["AD-TUMOR-ALT"].append(__recover_depth(e, "AD", normal=False, reference=False, varscan=varscan))
     edf = pd.DataFrame(edf)  # build dataframe from dict
     if edf.empty and any([bool(tse) for tse in edits]):
         raise ValueError(f"DataFrame is empty, but some edits have been called")
@@ -636,7 +657,7 @@ def report_strelka(
     exp_type: str, guide: str, cell_type: str, outdir: str, offregion: bool
 ) -> None:
     """The function construct the edits report using the variants called by
-    strelka.
+    Strelka.
 
     ...
 
@@ -735,18 +756,20 @@ def report_strelka(
     # build the edits dataframe
     if offregion:
         edits = pd.concat(
-            pd.concat(
-                [
-                    edits_dataframe(edits_upstream_snvs, targets.SITE.tolist(), strelka=True),
-                    edits_dataframe(edits_upstream_indels, targets.SITE.tolist(), strelka=True),
-                ]
-            ),
-            pd.concat(
-                [
-                    edits_dataframe(edits_downstream_snvs, targets.SITE.tolist(), strelka=True),
-                    edits_dataframe(edits_downstream_indels, targets.SITE.tolist(), strelka=True),
-                ]
-            ),
+            [
+                pd.concat(
+                    [
+                        edits_dataframe(edits_upstream_snvs, targets.SITE.tolist(), strelka=True),
+                        edits_dataframe(edits_upstream_indels, targets.SITE.tolist(), strelka=True),
+                    ]
+                ),
+                pd.concat(
+                    [
+                        edits_dataframe(edits_downstream_snvs, targets.SITE.tolist(), strelka=True),
+                        edits_dataframe(edits_downstream_indels, targets.SITE.tolist(), strelka=True),
+                    ]
+                ),
+            ]
         )
     else:
         edits = pd.concat(
@@ -885,6 +908,211 @@ def report_varscan(
     -------
     None
     """
+
+    if not isinstance(exp_type, str):
+        raise TypeError(f"Expected {str.__name__}, got {type(exp_type).__name__}")
+    if exp_type not in EXPERIMENTS:
+        raise ValueError(f"Forbidden experiment type ({exp_type})")
+    if not isinstance(guide, str):
+        raise TypeError(f"Expected {str.__name__}, got {type(guide).__name__}")
+    if not guide in GUIDES:
+        raise ValueError(f"Forbidden guide ({guide})")
+    if not isinstance(cell_type, str):
+        raise TypeError(f"Expected {str.__name__}, got {type(cell_type).__name__}")
+    if cell_type not in CELLTYPES:
+        raise ValueError(f"Forbidden cell type ({cell_type})")
+    # read the target sites
+    targets = pd.read_csv(exp_type, guide)
+    # parse VCFs
+    region = "offregion" if offregion else "onregion"
+    edits_dir = os.path.join(
+        EDITS, VCALLINGTOOLS[3], exp_type, cell_type, region, guide
+    )
+    if offregion:
+        edits_upstream_snvs = targets.apply(
+            lambda x : read_vcf(
+                os.path.join(
+                    edits_dir,
+                    f"{x[0]}_{int(x[1]) - 100 - PADSIZE}_{int(x[1]) - 100}.snp.vcf"
+                )
+            ),
+            axis=1
+        )
+        edits_upstream_indels = targets.apply(
+            lambda x : read_vcf(
+                os.path.join(
+                    edits_dir,
+                    f"{x[0]}_{int(x[1]) - 100 - PADSIZE}_{int(x[1]) - 100}.indel.vcf"
+                )
+            ),
+            axis=1
+        )
+        edits_downstream_snvs = targets.apply(
+            lambda x : read_vcf(
+                os.path.join(
+                    edits_dir,
+                    f"{x[0]}_{int(x[2]) + 100}_{int(x[2]) + 100 + PADSIZE}.snp.vcf"
+                )
+            ),
+            axis=1
+        )
+        edits_downstream_indels = targets.apply(
+            lambda x : read_vcf(
+                os.path.join(
+                    edits_dir,
+                    f"{x[0]}_{int(x[2]) + 100}_{int(x[2]) + 100 + PADSIZE}.indel.vcf"
+                )
+            ),
+            axis=1
+        )
+    else:
+        edits_snvs = targets.apply(
+            lambda x : read_vcf(
+                os.path.join(
+                    edits_dir,
+                    f"{x[0]}_{int(x[1]) - PADSIZE}_{int(x[2]) + PADSIZE}.snp.vcf"
+                )
+            ),
+            axis=1
+        )
+        edits_indels = targets.apply(
+            lambda x : read_vcf(
+                os.path.join(
+                    edits_dir,
+                    f"{x[0]}_{int(x[1]) - PADSIZE}_{int(x[2]) + PADSIZE}.indel.vcf"
+                )
+            ),
+            axis=1
+        )
+    # build the edits dataframe
+    if offregion:
+        edits = pd.concat(
+            [
+                pd.concat(
+                    [
+                        edits_dataframe(edits_upstream_snvs, targets.SITE.tolist(), varscan=True),
+                        edits_dataframe(edits_upstream_indels, targets.SITE.tolist(), varscan=True)
+                    ]
+                ),
+                pd.concat(
+                    [
+                        edits_dataframe(edits_downstream_snvs, targets.SITE.tolist(), varscan=True),
+                        edits_dataframe(edits_downstream_indels, targets.SITE.tolist(), varscan=True)
+                    ]
+                )
+            ]
+        )
+    else:
+        edits = pd.concat(
+            [
+                edits_dataframe(edits_snvs, targets.SITE.tolist(), varscan=True),
+                edits_dataframe(edits_indels, targets.SITE.tolist(), varscan=True)
+            ]
+        )
+    if not edits.empty:  # following operations performed only if edits have been called
+        # assign edit type (insertion, deletion, or snv)
+        edits["TYPE"] = edits.apply(lambda x : assign_etype(x[4], x[5]), axis=1)
+        # join targets and edits dataset
+        edits = edits.merge(targets, on="SITE")
+        # keep only columns of interest
+        if exp_type == EXPERIMENTS[0]:  # circleseq
+            keep = [
+                "SITE",
+                "CHROM",
+                "POS",
+                "REF",
+                "ALT",
+                "FILTER",
+                "DP-NORMAL",
+                "DP-TUMOR",
+                "AD-NORMAL-REF",
+                "AD-NORMAL-ALT",
+                "AD-TUMOR-REF",
+                "AD-TUMOR-ALT",
+                "TYPE",
+                "Start",
+                "End",
+                "Strand",
+                "Distance",
+            ]
+        else:  # guideseq
+            keep = [
+                "SITE",
+                "CHROM",
+                "POS",
+                "REF",
+                "ALT",
+                "FILTER",
+                "DP-NORMAL",
+                "DP-TUMOR",
+                "AD-NORMAL-REF",
+                "AD-NORMAL-ALT",
+                "AD-TUMOR-REF",
+                "AD-TUMOR-ALT",
+                "TYPE",
+                "start",
+                "end",
+                "Strand",
+                "Mismatch Total",
+            ]
+        edits = edits[keep]
+        edits.columns = [
+            "SITE",
+            "CHROM",
+            "VAR-POS",
+            "REF",
+            "ALT",
+            "FILTER",
+            "DP-NORMAL",
+            "DP-TUMOR",
+            "AD-NORMAL-REF",
+            "AD-NORMAL-ALT",
+            "AD-TUMOR-REF",
+            "AD-TUMOR-ALT",
+            "TYPE",
+            "TARGET-START",
+            "TARGET-STOP",
+            "STRAND",
+            "MISMATCHES",
+        ]  # rename columns
+        # compute the distance between the called edits and their target site
+        edits["START-DISTANCE"] = edits.apply(
+            lambda x: compute_distance(int(x[2]), int(x[13])), axis=1
+        )
+        edits["STOP-DISTANCE"] = edits.apply(
+            lambda x: compute_distance(int(x[2]), int(x[14])), axis=1
+        )
+        # assess if the edits occurred inside the expected target sites
+        edits["FLAG"] = edits.apply(
+            lambda x: edit_location(int(x[2]), int(x[13]), int(x[14]), x[3], x[4], x[12]),
+            axis=1,
+        )
+    else:
+        columns = [
+            "SITE",
+            "CHROM",
+            "VAR-POS",
+            "REF",
+            "ALT",
+            "FILTER",
+            "DP-NORMAL",
+            "DP-TUMOR",
+            "AD-NORMAL-REF",
+            "AD-NORMAL-ALT",
+            "AD-TUMOR-REF",
+            "AD-TUMOR-ALT",
+            "TYPE",
+            "TARGET-START",
+            "TARGET-STOP",
+            "STRAND",
+            "MISMATCHES",
+        ]
+        edits = pd.DataFrame(columns=columns)
+    # write the report
+    outfile = os.path.join(
+        outdir, f"{VCALLINGTOOLS[3]}_{exp_type}_{cell_type}_{guide}_{region}.tsv"
+    )
+    edits.to_csv(outfile, sep="\t", index=False)
 
 
 def main():
