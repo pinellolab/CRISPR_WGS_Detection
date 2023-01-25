@@ -10,6 +10,7 @@ import os
 PINDEL = "pindel"
 PADSIZE = 10000
 
+
 def parse_commandline():
     """The function parses the command line arguments."""
 
@@ -17,45 +18,67 @@ def parse_commandline():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         description="Script to call variants in the specified regions using pindel.",
         usage="\n\tpython3 %(prog)s --targets <TARGETS-FILE> --genome <GENOME> "
-              "--normal-bam <BAM> --normal-sample <NORMAL-SAMPLE> --tumor-bam <BAM> "
-              " --tumor-sample <TUMOR-SAMPLE> --chrom-col <CHROM-COL-NUM> --start-col "
-              "<START-COL-NUM> --stop-col <STOP-COL-NUM> --out <OUTDIR>"
+        "--normal-bam <BAM> --normal-sample <NORMAL-SAMPLE> --tumor-bam <BAM> "
+        " --tumor-sample <TUMOR-SAMPLE> --chrom-col <CHROM-COL-NUM> --start-col "
+        "<START-COL-NUM> --stop-col <STOP-COL-NUM> --out <OUTDIR>",
     )
     parser.add_argument(
         "--targets", type=str, metavar="TARGETS-FILE", help="Target sites file"
     )
     parser.add_argument("--genome", type=str, metavar="GENOME", help="Reference genome")
     parser.add_argument(
-        "--normal-bam", type=str, metavar="BAM", dest="normal_bam", help="Normal BAM file"
+        "--normal-bam",
+        type=str,
+        metavar="BAM",
+        dest="normal_bam",
+        help="Normal BAM file",
     )
     parser.add_argument(
-        "--normal-sample", type=str, metavar="NORMAL-SAMPLE", dest="normal_sample", help="Normal sample"
+        "--normal-sample",
+        type=str,
+        metavar="NORMAL-SAMPLE",
+        dest="normal_sample",
+        help="Normal sample",
     )
     parser.add_argument(
         "--tumor-bam", type=str, metavar="BAM", dest="tumor_bam", help="Tumor BAM file"
     )
     parser.add_argument(
-        "--tumor-sample", type=str, metavar="TUMOR-SAMPLE", dest="tumor_sample", help="Tumor sample"
+        "--tumor-sample",
+        type=str,
+        metavar="TUMOR-SAMPLE",
+        dest="tumor_sample",
+        help="Tumor sample",
     )
     parser.add_argument(
-        "--chrom-col", type=int, metavar="CHROM-COL-NUM", help="Column containing chromosome", dest="chrom_col"
+        "--chrom-col",
+        type=int,
+        metavar="CHROM-COL-NUM",
+        help="Column containing chromosome",
+        dest="chrom_col",
     )
     parser.add_argument(
-        "--start-col", type=int, metavar="START-COL-NUM", help="Column cotaining the start coordinates", dest="start_col"
+        "--start-col",
+        type=int,
+        metavar="START-COL-NUM",
+        help="Column cotaining the start coordinates",
+        dest="start_col",
     )
     parser.add_argument(
-        "--stop-col", type=int, metavar="STOP-COL-NUM", help="Column containing the stop coordinates", dest="stop_col"
+        "--stop-col",
+        type=int,
+        metavar="STOP-COL-NUM",
+        help="Column containing the stop coordinates",
+        dest="stop_col",
     )
     parser.add_argument(
-        "--offregion", 
-        action="store_true", 
-        default=False, 
+        "--offregion",
+        action="store_true",
+        default=False,
         help="Shift the target regions 100bp upstream and downstream (not overlapping "
-             "the original site)"
+        "the original site)",
     )
-    parser.add_argument(
-        "--out", type=str, metavar="OUTDIR", help="Output directory"
-    )
+    parser.add_argument("--out", type=str, metavar="OUTDIR", help="Output directory")
     args = parser.parse_args()
     return args
 
@@ -64,24 +87,35 @@ def parse_targets_coordinates(targets_file, chrom_col, start_col, stop_col, offr
     """The function parses the target sites file."""
 
     handle = open(targets_file, mode="r")
-    lines = [line.strip().split() for i, line in enumerate(handle) if i > 0]  # skip header
+    lines = [
+        line.strip().split() for i, line in enumerate(handle) if i > 0
+    ]  # skip header
     if offregion:
         regions = [
-            "%s:%s-%s" % (
-                line[chrom_col], (int(line[start_col]) - 100 - PADSIZE), (int(line[start_col]) - 100)
-            ) 
+            "%s:%s-%s"
+            % (
+                line[chrom_col],
+                (int(line[start_col]) - 100 - PADSIZE),
+                (int(line[start_col]) - 100),
+            )
             for line in lines
         ] + [
-            "%s:%s-%s" % (
-                line[chrom_col], (int(line[stop_col]) + 100), (int(line[stop_col]) + 100 + PADSIZE)
-            ) 
+            "%s:%s-%s"
+            % (
+                line[chrom_col],
+                (int(line[stop_col]) + 100),
+                (int(line[stop_col]) + 100 + PADSIZE),
+            )
             for line in lines
         ]
         assert len(regions) == (len(lines) * 2)
     else:
         regions = [
-            "%s:%s-%s" % (
-                line[chrom_col], (int(line[start_col]) - PADSIZE), (int(line[stop_col]) + PADSIZE)
+            "%s:%s-%s"
+            % (
+                line[chrom_col],
+                (int(line[start_col]) - PADSIZE),
+                (int(line[stop_col]) + PADSIZE),
             )
             for line in lines
         ]
@@ -111,13 +145,13 @@ def config_file(tumor_bam, tumor_sample, normal_bam, normal_sample):
 
 def pindel(configfile, genome, region, outdir, name):
     """The function runs pindel on the input regions."""
-    
+
     # call variants
     outfile = os.path.join(outdir, name)
     cmd = "%s -f %s -i %s -c %s -o %s" % (PINDEL, genome, configfile, region, outfile)
     code = subprocess.call(cmd, shell=True)
     if code != 0:
-        raise OSError("An error occurred while running \"%s\"" % (cmd))
+        raise OSError('An error occurred while running "%s"' % (cmd))
 
 
 def main():
@@ -130,7 +164,9 @@ def main():
     # get target names
     names = get_names(regions)
     # create the config file to run pindel on the current data
-    configfile = config_file(args.tumor_bam, args.tumor_sample, args.normal_bam, args.normal_sample)
+    configfile = config_file(
+        args.tumor_bam, args.tumor_sample, args.normal_bam, args.normal_sample
+    )
     # run pindel
     for i, region in enumerate(regions):
         pindel(configfile, args.genome, region, args.out, names[i])
@@ -142,4 +178,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

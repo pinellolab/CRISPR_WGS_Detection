@@ -37,36 +37,35 @@ def parse_commandline():
     parser = argparse.ArgumentParser(
         formatter_class=argparse.RawTextHelpFormatter,
         description="Run variant calling tools to detect CRISPR-Cas9 edits",
-        usage="\n\tpython3 %(prog)s --tool <TOOL-NAME> --type <TYPE>"
+        usage="\n\tpython3 %(prog)s --tool <TOOL-NAME> --type <TYPE>",
     )
     parser.add_argument(
-        "--tool", 
-        type=str, 
-        metavar="TOOL-NAME", 
+        "--tool",
+        type=str,
+        metavar="TOOL-NAME",
         help="Variant calling tool. Available values: <mutect2, strelka, "
-             "varscan, pindel>"
+        "varscan, pindel>",
     )
     parser.add_argument(
-        "--type", 
-        type=str, 
+        "--type",
+        type=str,
         metavar="TYPE",
         help="Target sites validation experiment type. Available values: "
-             "<guideseq, circleseq>"
+        "<guideseq, circleseq>",
     )
     parser.add_argument(
         "--offregion",
         action="store_true",
         default=False,
         help="Shift the target regions 100bp upstream and downstream (not "
-             "overlapping the original target site)"
+        "overlapping the original target site)",
     )
     args = parser.parse_args()
     # check arguments consistency
     if args.tool not in VCALLINGTOOLS:
         raise ValueError(
-            "%s cannot run %s. Check the help for the available tools" % (
-                __file__, args.tool
-            )
+            "%s cannot run %s. Check the help for the available tools"
+            % (__file__, args.tool)
         )
     if args.type != "circleseq" and args.type != "guideseq":
         raise ValueError(
@@ -90,7 +89,9 @@ def run_mutect2(exp_type, offregion):
             stop_col = 2
             name_col = 6
         else:  # circleseq
-            targets = os.path.join(CIRCLESEQ, "%s.circleseq.hg19.hg38.targetname" % (guide))
+            targets = os.path.join(
+                CIRCLESEQ, "%s.circleseq.hg19.hg38.targetname" % (guide)
+            )
             outdir = os.path.join(outdir, "circleseq")
             chrom_col = 0
             start_col = 1
@@ -116,11 +117,22 @@ def run_mutect2(exp_type, offregion):
             if offregion:
                 odir = os.path.join(odir, "offregion", guide)
                 offr = "--offregion"  # shift target sites
-            else: 
+            else:
                 odir = os.path.join(odir, "onregion", guide)
             commands.append(
-                cmd % (
-                    MUTECTPY, targets, GENOME, bam1, bam2, chrom_col, start_col, stop_col, name_col, offr, odir
+                cmd
+                % (
+                    MUTECTPY,
+                    targets,
+                    GENOME,
+                    bam1,
+                    bam2,
+                    chrom_col,
+                    start_col,
+                    stop_col,
+                    name_col,
+                    offr,
+                    odir,
                 )
             )
     # run variant calling
@@ -133,7 +145,7 @@ def run_mutect2(exp_type, offregion):
 
 def run_strelka(exp_type, offregion):
     """The function builds the commands to run strelka."""
-    
+
     commands = []  # commands array
     if not os.path.isdir(STRELKARUNDIR):
         os.mkdir(STRELKARUNDIR)
@@ -147,7 +159,9 @@ def run_strelka(exp_type, offregion):
             stop_col = 2
             name_col = 6
         else:  # circleseq
-            targets = os.path.join(CIRCLESEQ, "%s.circleseq.hg19.hg38.targetname" % (guide))
+            targets = os.path.join(
+                CIRCLESEQ, "%s.circleseq.hg19.hg38.targetname" % (guide)
+            )
             outdir = os.path.join(outdir, "circleseq")
             chrom_col = 0
             start_col = 1
@@ -155,7 +169,7 @@ def run_strelka(exp_type, offregion):
             name_col = 12
         for cell_type in CELLTYPES:
             cmd = str(
-                "python %s --targets %s --genome %s --normal-bam %s --tumor-bam " 
+                "python %s --targets %s --genome %s --normal-bam %s --tumor-bam "
                 "%s --chrom-col %d --start-col %d --stop-col %d --name-col %d %s "
                 "--run-dir %s --out %s"
             )
@@ -173,11 +187,23 @@ def run_strelka(exp_type, offregion):
             if offregion:
                 odir = os.path.join(odir, "offregion", guide)
                 offr = "--offregion"
-            else: 
+            else:
                 odir = os.path.join(odir, "onregion", guide)
             commands.append(
-                cmd % (
-                    STRELKAPY, targets, GENOME, bam1, bam2, chrom_col, start_col, stop_col, name_col, offr, STRELKARUNDIR, odir
+                cmd
+                % (
+                    STRELKAPY,
+                    targets,
+                    GENOME,
+                    bam1,
+                    bam2,
+                    chrom_col,
+                    start_col,
+                    stop_col,
+                    name_col,
+                    offr,
+                    STRELKARUNDIR,
+                    odir,
                 )
             )
     # run variant calling
@@ -204,7 +230,9 @@ def run_pindel(exp_type, offregion):
             start_col = 1
             stop_col = 2
         else:  # circleseq
-            targets = os.path.join(CIRCLESEQ, "%s.circleseq.hg19.hg38.targetname" % (guide))
+            targets = os.path.join(
+                CIRCLESEQ, "%s.circleseq.hg19.hg38.targetname" % (guide)
+            )
             outdir = os.path.join(outdir, "circleseq")
             chrom_col = 0
             start_col = 1
@@ -229,11 +257,23 @@ def run_pindel(exp_type, offregion):
             if offregion:
                 odir = os.path.join(odir, "offregion", guide)
                 offr = "--offregion"
-            else: 
+            else:
                 odir = os.path.join(odir, "onregion", guide)
             commands.append(
-                cmd % (
-                    PINDELPY, targets, GENOME, bam2, "DNMT1Site3", bam1, guide, chrom_col, start_col, stop_col, offr, odir
+                cmd
+                % (
+                    PINDELPY,
+                    targets,
+                    GENOME,
+                    bam2,
+                    "DNMT1Site3",
+                    bam1,
+                    guide,
+                    chrom_col,
+                    start_col,
+                    stop_col,
+                    offr,
+                    odir,
                 )
             )
     # run variant calling
@@ -257,7 +297,9 @@ def run_varscan(exp_type, offregion):
             start_col = 1
             stop_col = 2
         else:  # circleseq
-            targets = os.path.join(CIRCLESEQ, "%s.circleseq.hg19.hg38.targetname" % (guide))
+            targets = os.path.join(
+                CIRCLESEQ, "%s.circleseq.hg19.hg38.targetname" % (guide)
+            )
             outdir = os.path.join(outdir, "circleseq")
             chrom_col = 0
             start_col = 1
@@ -281,11 +323,21 @@ def run_varscan(exp_type, offregion):
             if offregion:
                 odir = os.path.join(odir, "offregion", guide)
                 offr = "--offregion"
-            else: 
+            else:
                 odir = os.path.join(odir, "onregion", guide)
             commands.append(
-                cmd % (
-                    VARSCANPY, targets, GENOME, bam2, bam1, chrom_col, start_col, stop_col, offr, odir
+                cmd
+                % (
+                    VARSCANPY,
+                    targets,
+                    GENOME,
+                    bam2,
+                    bam1,
+                    chrom_col,
+                    start_col,
+                    stop_col,
+                    offr,
+                    odir,
                 )
             )
     # run variant calling
@@ -318,12 +370,10 @@ def main():
         run_varscan(args.type, args.offregion)  # run varscan
     else:
         raise ValueError(
-            "%s cannot run %s. Check the help for the available tools" % (
-                __file__, args.tool 
-            )
+            "%s cannot run %s. Check the help for the available tools"
+            % (__file__, args.tool)
         )
 
 
 if __name__ == "__main__":
     main()
-

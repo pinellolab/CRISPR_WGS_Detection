@@ -19,12 +19,11 @@ GUIDESEQ = os.path.join(
 )
 CIRCLESEQ = os.path.join(BASEDIR, "offtargetDetection/circleseq/")
 EDITS = os.path.join(
-    BASEDIR, 
-    "wgs/GM12878-Cas9/WGS1000/detectWithOtherTools/manuel_experiments/VCFs"
+    BASEDIR, "wgs/GM12878-Cas9/WGS1000/detectWithOtherTools/manuel_experiments/VCFs"
 )
-# TODO: remove --out 
+# TODO: remove --out
 # REPORTS = os.path.join(
-#     BASEDIR, 
+#     BASEDIR,
 #     "wgs/GM12878-Cas9/WGS1000/detectWithOtherTools/manuel_experiments/reports"
 # )
 # variant calling tools
@@ -61,21 +60,21 @@ def parse_commandline() -> argparse.ArgumentParser:
         formatter_class=argparse.RawTextHelpFormatter,
         description="Script to construct the reports storing the called edits",
         usage="\n\tpython3 %(prog)s --tool <TOOL-NAME> --type <TYPE> --out "
-              "<OUTDIR> --offregion"
+        "<OUTDIR> --offregion",
     )
     parser.add_argument(
-        "--tool", 
-        type=str, 
-        metavar="TOOL-NAME", 
+        "--tool",
+        type=str,
+        metavar="TOOL-NAME",
         help="Variant calling tool. Available values: <mutect2, strelka, "
-             "varscan, pindel>"
+        "varscan, pindel>",
     )
     parser.add_argument(
-        "--type", 
-        type=str, 
+        "--type",
+        type=str,
         metavar="TYPE",
         help="Target sites validation experiment type. Available values: "
-             "<guideseq, circleseq>"
+        "<guideseq, circleseq>",
     )
     parser.add_argument("--out", type=str, metavar="OUTDIR", help="Output directory")
     parser.add_argument(
@@ -83,16 +82,14 @@ def parse_commandline() -> argparse.ArgumentParser:
         action="store_true",
         default=False,
         help="Shift the target regions 100bp upstream and downstream (not "
-             "overlapping the original target site)"
+        "overlapping the original target site)",
     )
     args = parser.parse_args()
     return args
 
 
 def read_targets(exp_type: str, guide: str) -> pd.DataFrame:
-    """ (PRIVATE) 
-
-    The function parses the target sites file.
+    """The function parses the target sites file.
 
     ...
 
@@ -100,7 +97,7 @@ def read_targets(exp_type: str, guide: str) -> pd.DataFrame:
     ----------
     exp_type
         Experiment type
-    
+
     """
 
     if not isinstance(exp_type, str):
@@ -113,13 +110,12 @@ def read_targets(exp_type: str, guide: str) -> pd.DataFrame:
         raise ValueError(f"Forbidden guide ({guide})")
     if exp_type == EXPERIMENTS[0]:  # circleseq
         targets = pd.read_csv(
-            os.path.join(CIRCLESEQ, f"{guide}.circleseq.hg19.hg38.targetname"),
-            sep="\t"
+            os.path.join(CIRCLESEQ, f"{guide}.circleseq.hg19.hg38.targetname"), sep="\t"
         )
         cols = targets.columns.tolist()  # rename columns for later join
         targets.columns = cols[:-1] + ["SITE"]
     else:  # guideseq
-        targets = pd.read_csv(os.path.join(GUIDESEQ, f"{guide}.guideseq"), sep="\t")  
+        targets = pd.read_csv(os.path.join(GUIDESEQ, f"{guide}.guideseq"), sep="\t")
         cols = targets.columns.tolist()  # rename columns for later join
         targets.columns = cols[:6] + ["SITE"] + cols[7:]
     assert not targets.empty
@@ -127,9 +123,7 @@ def read_targets(exp_type: str, guide: str) -> pd.DataFrame:
 
 
 def read_vcf(vcf: str) -> List[List]:
-    """ (PRIVATE)
-
-    The function parses the input VCF.
+    """The function parses the input VCF.
 
     ...
 
@@ -142,16 +136,14 @@ def read_vcf(vcf: str) -> List[List]:
     -------
     List[List]
     """
-    
+
     if not isinstance(vcf, str):
         raise TypeError(f"Expected {str.__name__}, got {type(vcf).__name__}")
     if not os.path.isfile(vcf):
         raise FileNotFoundError(f"Unable to locate {vcf}")
     try:
         handle = open(vcf, mode="r")
-        variants = [
-            line.strip().split() for line in handle if not line.startswith("#")
-        ]
+        variants = [line.strip().split() for line in handle if not line.startswith("#")]
     except OSError:
         raise OSError(f"An error occurred while reading {vcf}")
     finally:
@@ -159,10 +151,35 @@ def read_vcf(vcf: str) -> List[List]:
     return variants
 
 
-def edits_dataframe(edits: List, target_sites: List) -> pd.DataFrame:
-    """ (PRIVATE) 
+def __recover_depth(edit: List, normal: Optional[bool] = True) -> int:
+    """(PRIVATE)
 
-    The function constructs a dataframe from the parsed edits.
+    The function recovers the read depth supporting the reference and
+    alternative alleles called.
+
+    ...
+
+    Parameters
+    ----------
+    edit
+        Input edit
+    normal
+
+    Returns
+    -------
+    int
+    """
+
+    assert len(edit) == 11  # each edit contains exactly 10 fields
+    # get the position where the read depth is stored
+    dpidx = edit[8].split(":").index("DP")
+    if normal:
+        return int(edit[9].split(":")[dpidx])
+    return int(edit[10].split(":")[dpidx])
+
+
+def edits_dataframe(edits: List, target_sites: List) -> pd.DataFrame:
+    """The function constructs a dataframe from the parsed edits.
 
     ...
 
@@ -181,7 +198,15 @@ def edits_dataframe(edits: List, target_sites: List) -> pd.DataFrame:
     assert len(edits) == len(target_sites)
     # edits dictionary
     edf = {
-        "SITE": [], "CHROM": [], "POS": [], "ID": [], "REF": [], "ALT": [], "FILTER": []
+        "SITE": [],
+        "CHROM": [],
+        "POS": [],
+        "ID": [],
+        "REF": [],
+        "ALT": [],
+        "FILTER": [],
+        "DP-REF": [],
+        "DP-ALT": [],
     }
     for i, tse in enumerate(edits):
         if bool(tse):  # skip target sites without called edits
@@ -193,6 +218,8 @@ def edits_dataframe(edits: List, target_sites: List) -> pd.DataFrame:
                 edf["REF"].append(e[3])
                 edf["ALT"].append(e[4])
                 edf["FILTER"].append(e[6])
+                edf["DP-REF"].append(__recover_depth(e))
+                edf["DP-ALT"].append(__recover_depth(e, False))
     edf = pd.DataFrame(edf)  # build dataframe from dict
     if edf.empty and any([bool(tse) for tse in edits]):
         raise ValueError(f"DataFrame is empty, but some edits have been called")
@@ -200,10 +227,10 @@ def edits_dataframe(edits: List, target_sites: List) -> pd.DataFrame:
 
 
 def __etype(ref: str, alt: str) -> str:
-    """ (PRIVATE)
-    
+    """(PRIVATE)
+
     The function decide wheter the input edit is a deletion, insertion or snv.
-    
+
     ...
 
     Parameters
@@ -226,9 +253,9 @@ def __etype(ref: str, alt: str) -> str:
 
 
 def assign_etype(ref: str, alt: str) -> str:
-    """The function assigns a type to the input edit. The available types are 
+    """The function assigns a type to the input edit. The available types are
     insertion, deletion, or snv.
-    
+
     ...
 
     Parameters
@@ -237,7 +264,7 @@ def assign_etype(ref: str, alt: str) -> str:
         Reference allele
     alt
         Alternative allele
-    
+
     Returns
     -------
     str
@@ -257,9 +284,9 @@ def assign_etype(ref: str, alt: str) -> str:
 
 
 def compute_distance(epos: int, target_pos: int) -> int:
-    """The function computes the distance between the called edit edit site and 
+    """The function computes the distance between the called edit edit site and
     their supposed target site.
-    
+
     ...
 
     Parameters
@@ -288,10 +315,10 @@ def compute_distance(epos: int, target_pos: int) -> int:
 def edit_location(
     epos: int, target_start: int, target_stop: int, ref: str, alt: str, etype: str
 ) -> str:
-    """The function assesses if the input edit occurred inside or outside the 
-    expected target site. If the variant is a deletion or insertion, the edit is 
+    """The function assesses if the input edit occurred inside or outside the
+    expected target site. If the variant is a deletion or insertion, the edit is
     flagged as TP if it overlaps the target site positions.
-    
+
     ...
 
     Parameters
@@ -322,11 +349,15 @@ def edit_location(
                 for aa in alt.split(","):
                     if len(aa) < len(ref):  # deletion:
                         padpos = list(range(epos, epos + len(ref)))
-                        if any([p <= target_stop and p >= target_start for p in padpos]):
+                        if any(
+                            [p <= target_stop and p >= target_start for p in padpos]
+                        ):
                             return "TP"
                     elif len(ref) < len(aa):  # insertion
                         padpos = list(range(epos, epos + len(aa)))
-                        if any([p <= target_stop and p >= target_start for p in padpos]):
+                        if any(
+                            [p <= target_stop and p >= target_start for p in padpos]
+                        ):
                             return "TP"
         else:
             if DELETION in etype:
@@ -343,7 +374,7 @@ def edit_location(
 def report_mutect2(
     exp_type: str, guide: str, cell_type: str, outdir: str, offregion: bool
 ) -> None:
-    """ The function construct the edits report using the variants called by 
+    """The function construct the edits report using the variants called by
     Mutect2.
 
     ...
@@ -352,13 +383,13 @@ def report_mutect2(
     ----------
     exp_type
         Experiment type
-    guide 
+    guide
         Input guide
     cell_type
         Cell type
     outdir
         Output directory
-    offregion   
+    offregion
 
     Returns
     -------
@@ -379,112 +410,168 @@ def report_mutect2(
         raise ValueError(f"Forbidden cell type ({cell_type})")
     # read target sites
     targets = read_targets(exp_type, guide)
-    # parse VCFs 
+    # parse VCFs
     region = "offregion" if offregion else "onregion"
-    edits_dir = os.path.join(EDITS, VCALLINGTOOLS[0], exp_type, cell_type, region, guide)
+    edits_dir = os.path.join(
+        EDITS, VCALLINGTOOLS[0], exp_type, cell_type, region, guide
+    )
     if exp_type == EXPERIMENTS[0]:  # circleseq
         if offregion:
             # parse edits upstream (offregion)
             edits_upstream = targets.apply(
-                lambda x : read_vcf(
+                lambda x: read_vcf(
                     os.path.join(
                         edits_dir,
-                        f"{x[-1]}.{x[0]}:{int(x[1]) - 100 - PADSIZE}-{int(x[1]) - 100}.vcf.filtered.vcf"
+                        f"{x[-1]}.{x[0]}:{int(x[1]) - 100 - PADSIZE}-{int(x[1]) - 100}.vcf.filtered.vcf",
                     )
                 ),
-                axis=1
+                axis=1,
             )
             # parse edits downstream (offregion)
             edits_downstream = targets.apply(
-                lambda x : read_vcf(
+                lambda x: read_vcf(
                     os.path.join(
                         edits_dir,
-                        f"{x[-1]}.{x[0]}:{int(x[2]) + 100}-{int(x[2]) + 100 + PADSIZE}.vcf.filtered.vcf"
+                        f"{x[-1]}.{x[0]}:{int(x[2]) + 100}-{int(x[2]) + 100 + PADSIZE}.vcf.filtered.vcf",
                     )
                 ),
-                axis=1
+                axis=1,
             )
         else:
             edits = targets.apply(
-                lambda x : read_vcf(
+                lambda x: read_vcf(
                     os.path.join(
-                        edits_dir, 
-                        f"{x[-1]}.{x[0]}:{int(x[1]) - PADSIZE}-{int(x[2]) + PADSIZE}.vcf.filtered.vcf"
+                        edits_dir,
+                        f"{x[-1]}.{x[0]}:{int(x[1]) - PADSIZE}-{int(x[2]) + PADSIZE}.vcf.filtered.vcf",
                     )
                 ),
-                axis=1
+                axis=1,
             )
     else:  # guideseq
         if offregion:
             # parse edits upstream (offregion)
             edits_upstream = targets.apply(
-                lambda x : read_vcf(
+                lambda x: read_vcf(
                     os.path.join(
                         edits_dir,
-                        f"{x[6]}.{x[0]}:{int(x[1]) - 100 - PADSIZE}-{int(x[1]) - 100}.vcf.filtered.vcf"
+                        f"{x[6]}.{x[0]}:{int(x[1]) - 100 - PADSIZE}-{int(x[1]) - 100}.vcf.filtered.vcf",
                     )
                 ),
-                axis=1
+                axis=1,
             )
             # parse edits downstream (offregion)
             edits_downstream = targets.apply(
-                lambda x : read_vcf(
+                lambda x: read_vcf(
                     os.path.join(
                         edits_dir,
-                        f"{x[6]}.{x[0]}:{int(x[2]) + 100}-{int(x[2]) + 100 + PADSIZE}.vcf.filtered.vcf"
+                        f"{x[6]}.{x[0]}:{int(x[2]) + 100}-{int(x[2]) + 100 + PADSIZE}.vcf.filtered.vcf",
                     )
                 ),
-                axis=1
+                axis=1,
             )
         else:
             edits = targets.apply(
-                lambda x : read_vcf(
+                lambda x: read_vcf(
                     os.path.join(
-                        edits_dir, 
-                        f"{x[6]}.{x[0]}:{int(x[1]) - PADSIZE}-{int(x[2]) + PADSIZE}.vcf.filtered.vcf"
+                        edits_dir,
+                        f"{x[6]}.{x[0]}:{int(x[1]) - PADSIZE}-{int(x[2]) + PADSIZE}.vcf.filtered.vcf",
                     )
                 ),
-                axis=1
+                axis=1,
             )
-    # build the edits dataframe 
+    # build the edits dataframe
     if offregion:
         edits = pd.concat(
-                [
-                    edits_dataframe(edits_upstream, targets.SITE.tolist()),
-                    edits_dataframe(edits_downstream, targets.SITE.tolist())
-                ]
-            )
+            [
+                edits_dataframe(edits_upstream, targets.SITE.tolist()),
+                edits_dataframe(edits_downstream, targets.SITE.tolist()),
+            ]
+        )
     else:
         edits = edits_dataframe(edits, targets.SITE.tolist())
-    # assign edit type (insertion, deletion, or snv)
-    edits["TYPE"] = edits.apply(lambda x : assign_etype(x[4], x[5]), axis=1)
-    # join targets and edits datasets
-    edits = edits.merge(targets, on="SITE")
-    # keep only the columns of interest
-    if exp_type == EXPERIMENTS[0]:  # circleseq
-        keep = [
-            "SITE", "CHROM", "POS", "REF", "ALT", "FILTER", "TYPE", "Start", "End", "Strand", "Distance"
+    if not edits.empty:
+        # assign edit type (insertion, deletion, or snv)
+        edits["TYPE"] = edits.apply(lambda x: assign_etype(x[4], x[5]), axis=1)
+        # join targets and edits datasets
+        edits = edits.merge(targets, on="SITE")
+        # keep only the columns of interest
+        if exp_type == EXPERIMENTS[0]:  # circleseq
+            keep = [
+                "SITE",
+                "CHROM",
+                "POS",
+                "REF",
+                "ALT",
+                "FILTER",
+                "DP-REF",
+                "DP-ALT",
+                "TYPE",
+                "Start",
+                "End",
+                "Strand",
+                "Distance",
+            ]
+        else:  # guideseq
+            keep = [
+                "SITE",
+                "CHROM",
+                "POS",
+                "REF",
+                "ALT",
+                "FILTER",
+                "DP-REF",
+                "DP-ALT",
+                "TYPE",
+                "start",
+                "end",
+                "Strand",
+                "Mismatch Total",
+            ]
+        edits = edits[keep]
+        edits.columns = [
+            "SITE",
+            "CHROM",
+            "VAR-POS",
+            "REF",
+            "ALT",
+            "FILTER",
+            "DP-REF",
+            "DP-ALT",
+            "TYPE",
+            "TARGET-START",
+            "TARGET-STOP",
+            "STRAND",
+            "MISMATCHES",
+        ]  # rename columns
+        # compute the distance between the called edits and their target site
+        edits["START-DISTANCE"] = edits.apply(
+            lambda x: compute_distance(int(x[2]), int(x[9])), axis=1
+        )
+        edits["STOP-DISTANCE"] = edits.apply(
+            lambda x: compute_distance(int(x[2]), int(x[10])), axis=1
+        )
+        # assess if the edits occurred inside the expected target sites
+        edits["FLAG"] = edits.apply(
+            lambda x: edit_location(int(x[2]), int(x[9]), int(x[10]), x[3], x[4], x[8]),
+            axis=1,
+        )
+    else:
+        columns = [
+            "SITE",
+            "CHROM",
+            "VAR-POS",
+            "REF",
+            "ALT",
+            "FILTER",
+            "DP-REF",
+            "DP-ALT",
+            "TYPE",
+            "TARGET-START",
+            "TARGET-STOP",
+            "STRAND",
+            "MISMATCHES",
         ]
-    else:  # guideseq
-        keep = [
-            "SITE", "CHROM", "POS", "REF", "ALT", "FILTER", "TYPE", "start", "end", "Strand", "Mismatch Total"
-        ]
-    edits = edits[keep]
-    edits.columns = [
-        "SITE", "CHROM", "VAR-POS", "REF", "ALT", "FILTER", "TYPE", "TARGET-START", "TARGET-STOP", "STRAND", "MISMATCHES"
-    ]  # rename columns
-    # compute the distance between the called edits and their target site
-    edits["START-DISTANCE"] = edits.apply(
-        lambda x : compute_distance(int(x[2]), int(x[7])), axis=1
-    )
-    edits["STOP-DISTANCE"] = edits.apply(
-        lambda x : compute_distance(int(x[2]), int(x[8])), axis=1
-    )
-    # assess if the edits occurred inside the expected target sites
-    edits["FLAG"] = edits.apply(
-        lambda x : edit_location(int(x[2]), int(x[7]), int(x[8]), x[3], x[4], x[6]),
-        axis=1
-    )
+        edits = pd.DataFrame(columns=columns)
     # write the report
     outfile = os.path.join(
         outdir, f"{VCALLINGTOOLS[0]}_{exp_type}_{cell_type}_{guide}_{region}.tsv"
@@ -495,7 +582,7 @@ def report_mutect2(
 def report_strelka(
     exp_type: str, guide: str, cell_type: str, outdir: str, offregion: bool
 ) -> None:
-    """ The function construct the edits report using the variants called by 
+    """The function construct the edits report using the variants called by
     Mutect2.
 
     ...
@@ -504,19 +591,19 @@ def report_strelka(
     ----------
     exp_type
         Experiment type
-    guide 
+    guide
         Input guide
     cell_type
         Cell type
     outdir
         Output directory
-    offregion   
+    offregion
 
     Returns
     -------
     pd.DataFrame
     """
-    
+
     if not isinstance(exp_type, str):
         raise TypeError(f"Expected {str.__name__}, got {type(exp_type).__name__}")
     if exp_type not in EXPERIMENTS:
@@ -533,62 +620,64 @@ def report_strelka(
     targets = read_targets(exp_type, guide)
     # parse VCFs
     region = "offregion" if offregion else "onregion"
-    edits_dir = os.path.join(EDITS, VCALLINGTOOLS[1], exp_type, cell_type, region, guide)
+    edits_dir = os.path.join(
+        EDITS, VCALLINGTOOLS[1], exp_type, cell_type, region, guide
+    )
     if offregion:
         edits_upstream_snvs = targets.apply(
-                lambda x : read_vcf(
-                    os.path.join(
-                        edits_dir,
-                        f"{x[0]}_{int(x[1]) - 100 - PADSIZE}_{int(x[1]) - 100}_somatic.snvs.vcf"
-                    )
-                ),
-                axis=1
-            )
-        edits_upstream_indels = targets.apply(
-            lambda x : read_vcf(
+            lambda x: read_vcf(
                 os.path.join(
                     edits_dir,
-                    f"{x[0]}_{int(x[1]) - 100 - PADSIZE}_{int(x[1]) - 100}_somatic.indels.vcf"
+                    f"{x[0]}_{int(x[1]) - 100 - PADSIZE}_{int(x[1]) - 100}_somatic.snvs.vcf",
                 )
             ),
-            axis=1
+            axis=1,
+        )
+        edits_upstream_indels = targets.apply(
+            lambda x: read_vcf(
+                os.path.join(
+                    edits_dir,
+                    f"{x[0]}_{int(x[1]) - 100 - PADSIZE}_{int(x[1]) - 100}_somatic.indels.vcf",
+                )
+            ),
+            axis=1,
         )
         edits_downstream_snvs = targets.apply(
-            lambda x : read_vcf(
+            lambda x: read_vcf(
                 os.path.join(
                     edits_dir,
-                    f"{x[0]}_{int(x[2]) + 100}_{int(x[2]) + 100 + PADSIZE}_somatic.snvs.vcf"
+                    f"{x[0]}_{int(x[2]) + 100}_{int(x[2]) + 100 + PADSIZE}_somatic.snvs.vcf",
                 )
             ),
-            axis=1
+            axis=1,
         )
         edits_downstream_indels = targets.apply(
-            lambda x : read_vcf(
+            lambda x: read_vcf(
                 os.path.join(
                     edits_dir,
-                    f"{x[0]}_{int(x[2]) + 100}_{int(x[2]) + 100 + PADSIZE}_somatic.indels.vcf"
+                    f"{x[0]}_{int(x[2]) + 100}_{int(x[2]) + 100 + PADSIZE}_somatic.indels.vcf",
                 )
             ),
-            axis=1
+            axis=1,
         )
     else:
         edits_snvs = targets.apply(
-                lambda x : read_vcf(
-                    os.path.join(
-                        edits_dir,
-                        f"{x[0]}_{int(x[1]) - PADSIZE}_{int(x[2]) + PADSIZE}_somatic.snvs.vcf"
-                    )
-                ),
-                axis=1 
-            )
-        edits_indels = targets.apply(
-            lambda x : read_vcf(
+            lambda x: read_vcf(
                 os.path.join(
                     edits_dir,
-                    f"{x[0]}_{int(x[1]) - PADSIZE}_{int(x[2]) + PADSIZE}_somatic.indels.vcf"
+                    f"{x[0]}_{int(x[1]) - PADSIZE}_{int(x[2]) + PADSIZE}_somatic.snvs.vcf",
                 )
             ),
-            axis=1
+            axis=1,
+        )
+        edits_indels = targets.apply(
+            lambda x: read_vcf(
+                os.path.join(
+                    edits_dir,
+                    f"{x[0]}_{int(x[1]) - PADSIZE}_{int(x[2]) + PADSIZE}_somatic.indels.vcf",
+                )
+            ),
+            axis=1,
         )
     # build the edits dataframe
     if offregion:
@@ -596,56 +685,104 @@ def report_strelka(
             pd.concat(
                 [
                     edits_dataframe(edits_upstream_snvs, targets.SITE.tolist()),
-                    edits_dataframe(edits_upstream_indels, targets.SITE.tolist())
+                    edits_dataframe(edits_upstream_indels, targets.SITE.tolist()),
                 ]
             ),
             pd.concat(
                 [
                     edits_dataframe(edits_downstream_snvs, targets.SITE.tolist()),
-                    edits_dataframe(edits_downstream_indels, targets.SITE.tolist())
+                    edits_dataframe(edits_downstream_indels, targets.SITE.tolist()),
                 ]
-            )
+            ),
         )
     else:
         edits = pd.concat(
             [
                 edits_dataframe(edits_snvs, targets.SITE.tolist()),
-                edits_dataframe(edits_indels, targets.SITE.tolist())
+                edits_dataframe(edits_indels, targets.SITE.tolist()),
             ]
         )
     if not edits.empty:  # following operations only if edits have been called
         # assign edit type (insertion, deletion, or snv)
-        edits["TYPE"] = edits.apply(lambda x : assign_etype(x[4], x[5]), axis=1)
+        edits["TYPE"] = edits.apply(lambda x: assign_etype(x[4], x[5]), axis=1)
         # join targets and edits dataset
         edits = edits.merge(targets, on="SITE")
         # keep only columns of interest
         if exp_type == EXPERIMENTS[0]:  # circleseq
             keep = [
-                "SITE", "CHROM", "POS", "REF", "ALT", "FILTER", "TYPE", "Start", "End", "Strand", "Distance"
+                "SITE",
+                "CHROM",
+                "POS",
+                "REF",
+                "ALT",
+                "FILTER",
+                "DP-REF",
+                "DP-ALT",
+                "TYPE",
+                "Start",
+                "End",
+                "Strand",
+                "Distance",
             ]
         else:  # guideseq
             keep = [
-                "SITE", "CHROM", "POS", "REF", "ALT", "FILTER", "TYPE", "start", "end", "Strand", "Mismatch Total"
+                "SITE",
+                "CHROM",
+                "POS",
+                "REF",
+                "ALT",
+                "FILTER",
+                "DP-REF",
+                "DP-ALT",
+                "TYPE",
+                "start",
+                "end",
+                "Strand",
+                "Mismatch Total",
             ]
         edits = edits[keep]
         edits.columns = [
-            "SITE", "CHROM", "VAR-POS", "REF", "ALT", "FILTER", "TYPE", "TARGET-START", "TARGET-STOP", "STRAND", "MISMATCHES"
+            "SITE",
+            "CHROM",
+            "VAR-POS",
+            "REF",
+            "ALT",
+            "FILTER",
+            "DP-REF",
+            "DP-ALT",
+            "TYPE",
+            "TARGET-START",
+            "TARGET-STOP",
+            "STRAND",
+            "MISMATCHES",
         ]  # rename columns
         # compute the distance between the called edits and their target site
         edits["START-DISTANCE"] = edits.apply(
-            lambda x : compute_distance(int(x[2]), int(x[7])), axis=1
+            lambda x: compute_distance(int(x[2]), int(x[7])), axis=1
         )
         edits["STOP-DISTANCE"] = edits.apply(
-            lambda x : compute_distance(int(x[2]), int(x[8])), axis=1
+            lambda x: compute_distance(int(x[2]), int(x[8])), axis=1
         )
         # assess if the edits occurred inside the expected target sites
         edits["FLAG"] = edits.apply(
-            lambda x : edit_location(int(x[2]), int(x[7]), int(x[8]), x[3], x[4], x[6]),
-            axis=1
+            lambda x: edit_location(int(x[2]), int(x[7]), int(x[8]), x[3], x[4], x[6]),
+            axis=1,
         )
     else:
         columns = [
-            "SITE", "CHROM", "VAR-POS", "REF", "ALT", "FILTER", "TYPE", "TARGET-START", "TARGET-STOP", "STRAND", "MISMATCHES"
+            "SITE",
+            "CHROM",
+            "VAR-POS",
+            "REF",
+            "ALT",
+            "FILTER",
+            "DP-REF",
+            "DP-ALT",
+            "TYPE",
+            "TARGET-START",
+            "TARGET-STOP",
+            "STRAND",
+            "MISMATCHES",
         ]
         edits = pd.DataFrame(columns=columns)
     # write the report
@@ -677,5 +814,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-        
-

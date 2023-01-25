@@ -18,11 +18,12 @@ FILTER = "gatk FilterMutectCalls"  # Filter Mutect variants
 PADSIZE = 10000  # pad regions by 10Kb upstream and downstream
 COORDSCOL = "coords_mutect_region"  # coordinates column name
 
+
 def parse_commandline() -> argparse.ArgumentParser:
     """The function parses the command line arguments.
 
     ...
-    
+
     Parameters
     ----------
     None
@@ -37,29 +38,49 @@ def parse_commandline() -> argparse.ArgumentParser:
         description="Script to call variants in the specified input regions",
         usage="\n\tpython3 %(prog)s --targets <TARGETS-FILE> --genome <GENOME> --bam1 <BAM> --bam2 <BAM> --normal <NORMAL-SAMPLE> --chrom-col <CHR-COL-NUM> --start-col <START-COL-NUM> --stop-col <STOP-COL-NUM> --name-col <NAME-COL-NUM> --offregion --out <OUTDIR>",
     )
-    parser.add_argument("--targets", type=str, metavar="TARGETS-FILE", help="Targets coordinates file")
+    parser.add_argument(
+        "--targets", type=str, metavar="TARGETS-FILE", help="Targets coordinates file"
+    )
     parser.add_argument("--genome", type=str, metavar="GENOME", help="Reference genome")
     parser.add_argument("--bam1", type=str, metavar="BAM", help="BAM file")
     parser.add_argument("--bam2", type=str, metavar="BAM", help="BAM file")
-    parser.add_argument("--normal", type=str, metavar="NORMAL-SAMPLE", help="Normal sample")
     parser.add_argument(
-        "--chrom-col", type=int, metavar="CHR-COL-NUM", help="Column containing chromosome", dest="chrom_col"
+        "--normal", type=str, metavar="NORMAL-SAMPLE", help="Normal sample"
     )
     parser.add_argument(
-        "--start-col", type=int, metavar="START-COL-NUM", help="Column containing start coordinate", dest="start_col"
+        "--chrom-col",
+        type=int,
+        metavar="CHR-COL-NUM",
+        help="Column containing chromosome",
+        dest="chrom_col",
     )
     parser.add_argument(
-        "--stop-col", type=int, metavar="STOP-COL-NUM", help="Column containing stop coordinate", dest="stop_col"
+        "--start-col",
+        type=int,
+        metavar="START-COL-NUM",
+        help="Column containing start coordinate",
+        dest="start_col",
     )
     parser.add_argument(
-        "--name-col", type=int, metavar="NAME-COL-NUM", help="Column containing target site name", dest="name_col"
+        "--stop-col",
+        type=int,
+        metavar="STOP-COL-NUM",
+        help="Column containing stop coordinate",
+        dest="stop_col",
     )
     parser.add_argument(
-        "--offregion", 
-        action="store_true", 
-        default=False, 
+        "--name-col",
+        type=int,
+        metavar="NAME-COL-NUM",
+        help="Column containing target site name",
+        dest="name_col",
+    )
+    parser.add_argument(
+        "--offregion",
+        action="store_true",
+        default=False,
         help="Shift the target regions 100bp upstream and downstream (not "
-             "overlapping the original site)"
+        "overlapping the original site)",
     )
     parser.add_argument("--out", type=str, metavar="OUTDIR", help="Output directory")
     args = parser.parse_args()
@@ -69,12 +90,12 @@ def parse_commandline() -> argparse.ArgumentParser:
 
 
 def __check_args(args: argparse.Namespace) -> None:
-    """ (PRIVATE)
-    
+    """(PRIVATE)
+
     The function checks input arguments consistency.
-    
+
     ...
-    
+
     Parameters
     ----------
     args
@@ -86,7 +107,9 @@ def __check_args(args: argparse.Namespace) -> None:
     """
 
     if not isinstance(args, argparse.Namespace):
-        raise TypeError(f"Expected {argparse.ArgumentParser.__name__}, got {type(args).__name__}")
+        raise TypeError(
+            f"Expected {argparse.ArgumentParser.__name__}, got {type(args).__name__}"
+        )
     if not isinstance(args.targets, str):
         raise TypeError(f"Expected {str.__name__}, got {type(args.targets).__name__}")
     if not os.path.isfile(args.targets):
@@ -123,7 +146,7 @@ def __check_args(args: argparse.Namespace) -> None:
 
 def compute_coordinates(chrom: str, start: int, stop: int) -> str:
     """The function computes the coordinate strings (format: <chrom:start-stop>
-    
+
     ...
 
     Parameters
@@ -154,8 +177,10 @@ def compute_coordinates(chrom: str, start: int, stop: int) -> str:
     return coord
 
 
-def parse_targets_coordinates(targets_file: str, chrom_col: int, start_col: int, stop_col: int, offregion: bool) -> pd.DataFrame:
-    """The function reads the input guide sequences file. The function pad the 
+def parse_targets_coordinates(
+    targets_file: str, chrom_col: int, start_col: int, stop_col: int, offregion: bool
+) -> pd.DataFrame:
+    """The function reads the input guide sequences file. The function pad the
     guide coordinates by 10 Kbs upstream and downstream.
 
     ...
@@ -171,7 +196,7 @@ def parse_targets_coordinates(targets_file: str, chrom_col: int, start_col: int,
     stop_col
         Stop coordinate column number
     offregion
-        Shift the start and stop coordinates by 100 bp upstream and downstream 
+        Shift the start and stop coordinates by 100 bp upstream and downstream
         with respect to the original target site
 
     Returns
@@ -189,35 +214,53 @@ def parse_targets_coordinates(targets_file: str, chrom_col: int, start_col: int,
     try:
         chrom_col = columns[chrom_col]
     except IndexError:
-        raise IndexError(f"The chromosome column number {chrom_col} is not in {targets_file}")
+        raise IndexError(
+            f"The chromosome column number {chrom_col} is not in {targets_file}"
+        )
     try:
         start_col = columns[start_col]
     except IndexError:
-        raise IndexError(f"The start coordinate column number {start_col} is not in {targets_file}")
+        raise IndexError(
+            f"The start coordinate column number {start_col} is not in {targets_file}"
+        )
     try:
         stop_col = columns[stop_col]
     except IndexError:
-        raise IndexError(f"The stop coordinate column number {stop_col} is not in {targets_file}")
+        raise IndexError(
+            f"The stop coordinate column number {stop_col} is not in {targets_file}"
+        )
     if offregion:  # off target regions
         targets1 = targets.copy()  # upstream shift
-        targets1[stop_col] = targets1.apply(lambda x : x[start_col] - 100, axis=1)
-        targets1[start_col] = targets1.apply(lambda x : x[start_col] - 100 - PADSIZE, axis=1)
+        targets1[stop_col] = targets1.apply(lambda x: x[start_col] - 100, axis=1)
+        targets1[start_col] = targets1.apply(
+            lambda x: x[start_col] - 100 - PADSIZE, axis=1
+        )
         targets2 = targets.copy()  # downstream shift
-        targets2[start_col] = targets2.apply(lambda x : x[stop_col] + 100, axis=1)
-        targets2[stop_col] = targets2.apply(lambda x : x[stop_col] + 100 + PADSIZE, axis=1)
+        targets2[start_col] = targets2.apply(lambda x: x[stop_col] + 100, axis=1)
+        targets2[stop_col] = targets2.apply(
+            lambda x: x[stop_col] + 100 + PADSIZE, axis=1
+        )
         targets = pd.concat([targets1, targets2])
     else:  # on target regions
         # pad start and stop coordinates
-        targets[start_col] = targets.apply(lambda x : x[start_col] - PADSIZE, axis=1)
-        targets[stop_col] = targets.apply(lambda x : x[stop_col] + PADSIZE, axis=1)
+        targets[start_col] = targets.apply(lambda x: x[start_col] - PADSIZE, axis=1)
+        targets[stop_col] = targets.apply(lambda x: x[stop_col] + PADSIZE, axis=1)
     # compute coordinates strings
     assert COORDSCOL not in columns
-    targets[COORDSCOL] = targets.apply(lambda x : compute_coordinates(x[chrom_col], x[start_col], x[stop_col]), axis=1)
+    targets[COORDSCOL] = targets.apply(
+        lambda x: compute_coordinates(x[chrom_col], x[start_col], x[stop_col]), axis=1
+    )
     return targets
 
 
 def mutect2(
-    genome: str, bam1: str, bam2: str, normal_sample: str, region: str, name: str, outdir: str
+    genome: str,
+    bam1: str,
+    bam2: str,
+    normal_sample: str,
+    region: str,
+    name: str,
+    outdir: str,
 ) -> None:
     """The function runs Mutect2 on the previously computed regions.
 
@@ -247,13 +290,15 @@ def mutect2(
 
     outfile = os.path.join(outdir, f"{name}.{region}.vcf")
     cmd = f"{MUTECT2} -R {genome} -I {bam1} -I {bam2} -normal {normal_sample} -L {region} -O {outfile}"
-    code = subprocess.call(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+    code = subprocess.call(
+        cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT
+    )
     if code != 0:
-        raise subprocess.SubprocessError(f"An error occurred while running \"{cmd}\"")
+        raise subprocess.SubprocessError(f'An error occurred while running "{cmd}"')
 
 
 def filter_mutect(vcf: str, genome: str, vcfout: str) -> None:
-    """The function filters the mutations called by Mutect2 during the previous 
+    """The function filters the mutations called by Mutect2 during the previous
     step.
 
     ...
@@ -273,28 +318,41 @@ def filter_mutect(vcf: str, genome: str, vcfout: str) -> None:
     """
 
     cmd = f"{FILTER} -V {vcf} -R {genome} -O {vcfout}"
-    code = subprocess.call(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+    code = subprocess.call(
+        cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT
+    )
     if code != 0:
-        raise subprocess.SubprocessError(f"An error occurred while running \"{cmd}\"")
+        raise subprocess.SubprocessError(f'An error occurred while running "{cmd}"')
 
 
 def main():
     # parse commandline
     args = parse_commandline()
     # parse the input targets file
-    targets = parse_targets_coordinates(args.targets, args.chrom_col, args.start_col, args.stop_col, args.offregion)
+    targets = parse_targets_coordinates(
+        args.targets, args.chrom_col, args.start_col, args.stop_col, args.offregion
+    )
     assert COORDSCOL in targets.columns.tolist()
     # run Mutect2 on each padded guide region
     tqdm.pandas()
     targets.progress_apply(
-        lambda x : mutect2(args.genome, args.bam1, args.bam2, args.normal, x[COORDSCOL], x[args.name_col], args.out),
-        axis=1
+        lambda x: mutect2(
+            args.genome,
+            args.bam1,
+            args.bam2,
+            args.normal,
+            x[COORDSCOL],
+            x[args.name_col],
+            args.out,
+        ),
+        axis=1,
     )
-    # filter variants called 
+    # filter variants called
     vcfs = glob(os.path.join(args.out, "*.vcf"))
     for vcf in tqdm(vcfs):
         vcfout = f"{vcf}.filtered.vcf"
         filter_mutect(vcf, args.genome, vcfout)
+
 
 if __name__ == "__main__":
     main()
