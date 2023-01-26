@@ -8,6 +8,7 @@ import sys
 import os
 
 PINDEL = "pindel"
+PINDEL2VCF = "pindel2vcf"
 PADSIZE = 10000
 
 
@@ -149,6 +150,15 @@ def pindel(configfile, genome, region, outdir, name):
     # call variants
     outfile = os.path.join(outdir, name)
     cmd = "%s -f %s -i %s -c %s -o %s" % (PINDEL, genome, configfile, region, outfile)
+    code = subprocess.call(cmd, shell=True)
+    if code != 0:
+        raise OSError('An error occurred while running "%s"' % (cmd))
+    # convert pindel output in VCF format
+    cmd = "%s -p %s_D -r %s -R hg38 -d 20131217 -G" % (PINDEL2VCF, outfile, genome)
+    code = subprocess.call(cmd, shell=True)
+    if code != 0:
+        raise OSError('An error occurred while running "%s"' % (cmd))
+    cmd = "%s -p %s_SI -r %s -R hg38 -d 20131217 -G" % (PINDEL2VCF, outfile, genome)
     code = subprocess.call(cmd, shell=True)
     if code != 0:
         raise OSError('An error occurred while running "%s"' % (cmd))

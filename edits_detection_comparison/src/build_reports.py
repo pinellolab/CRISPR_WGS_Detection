@@ -40,6 +40,48 @@ PADSIZE = 10000
 INSERTION = "insertion"
 DELETION = "deletion"
 SNV = "snv"
+# report columns
+REPORT_COLS = [
+    "SITE", "CHROM", "VAR-POS", "REF", "ALT", "FILTER", "DP-NORMAL", "DP-TUMOR", "AD-NORMAL-REF", "AD-NORMAL-ALT", "AD-TUMOR-REF", "AD-TUMOR-ALT", "TYPE", "TARGET-START", "TARGET-STOP", "STRAND", "MISMATCHES",
+]
+CIRCLESEQ_COLS = [
+    "SITE",
+    "CHROM",
+    "POS",
+    "REF",
+    "ALT",
+    "FILTER",
+    "DP-NORMAL",
+    "DP-TUMOR",
+    "AD-NORMAL-REF",
+    "AD-NORMAL-ALT",
+    "AD-TUMOR-REF",
+    "AD-TUMOR-ALT",
+    "TYPE",
+    "Start",
+    "End",
+    "Strand",
+    "Distance",
+]
+GUIDESEQ_COLS = [
+    "SITE",
+    "CHROM",
+    "POS",
+    "REF",
+    "ALT",
+    "FILTER",
+    "DP-NORMAL",
+    "DP-TUMOR",
+    "AD-NORMAL-REF",
+    "AD-NORMAL-ALT",
+    "AD-TUMOR-REF",
+    "AD-TUMOR-ALT",
+    "TYPE",
+    "start",
+    "end",
+    "Strand",
+    "Mismatch Total",
+]
 
 
 def parse_commandline() -> argparse.ArgumentParser:
@@ -156,6 +198,7 @@ def __recover_depth(
     depth: str, 
     normal: Optional[bool] = True, 
     reference: Optional[bool] = True,
+    pindel: Optional[bool] = False,
     varscan: Optional[bool] = False
 ) -> int:
     """(PRIVATE)
@@ -173,6 +216,7 @@ def __recover_depth(
         Read depth type <"AD", "DP">
     normal
     reference
+    pindel
     varscan
 
     Returns
@@ -188,7 +232,13 @@ def __recover_depth(
     depthidx = edit[8].split(":").index(depth)
     if depth == "DP":  # read depth
         if normal:  # normal condition
+            if pindel:  # pindel's VCFs miss DP field
+                depthidx = edit[8].split(":").index("AD")
+                return sum(map(int, edit[9].split(":")[depthidx].split(",")))
             return int(edit[9].split(":")[depthidx])
+        if pindel:  # pindel's VCFs miss DP field
+            depthidx = edit[8].split(":").index("AD")
+            return sum(map(int, edit[10].split(":")[depthidx].split(",")))
         return int(edit[10].split(":")[depthidx])  # tumor condition
     else:  # allele depth
         if normal:  # normal condition
@@ -219,6 +269,7 @@ def edits_dataframe(
     edits: List, 
     target_sites: List, 
     strelka: Optional[bool] = False,
+    pindel: Optional[bool] = False,
     varscan: Optional[bool] = False
 ) -> pd.DataFrame:
     """The function constructs a dataframe from the parsed edits.
@@ -232,6 +283,7 @@ def edits_dataframe(
     target_sites
         List of target sites
     strelka
+    pindel
     varscan
 
     Returns
@@ -266,8 +318,8 @@ def edits_dataframe(
                 edf["REF"].append(e[3])
                 edf["ALT"].append(e[4])
                 edf["FILTER"].append(e[6])
-                edf["DP-NORMAL"].append(__recover_depth(e, "DP", normal=True))
-                edf["DP-TUMOR"].append(__recover_depth(e, "DP", normal=False))
+                edf["DP-NORMAL"].append(__recover_depth(e, "DP", normal=True, pindel=pindel))
+                edf["DP-TUMOR"].append(__recover_depth(e, "DP", normal=False, pindel=pindel))
                 if strelka:  # strelka does not report AD
                     edf["AD-NORMAL-REF"].append(0)
                     edf["AD-NORMAL-ALT"].append(0)
@@ -429,6 +481,63 @@ def edit_location(
     return "FP"
 
 
+def process_edits_dataframe(
+    edits: pd.DataFrame, targets: pd.DataFrame, exp_type: str
+) -> pd.DataFrame:
+    """The function refines the edits report, by assigning to each edit its type,
+    distance from the start/stop coordinates of their target site, and a flag 
+    stating if the edit occurred inside or outside the expected target region.
+
+    ...
+
+    Parameters
+    ----------
+    edits
+        Edits dataset
+    targets
+        Target sites
+    exp_type
+        Experiment type <circleseq, guideseq>
+
+    Returns
+    -------
+    pd.DataFrame
+    """
+
+    if not isinstance(edits, pd.DataFrame):
+        raise TypeError(f"Expected {pd.DataFrame.__name__}, got {type(edits).__name__}")
+    if not isinstance(targets, pd.DataFrame):
+        raise TypeError(f"Expected {pd.DataFrame.__name__}, got {type(targets).__name__}")
+    if edits.empty:  # empty edits dataframe
+        edits = pd.DataFrame(
+            columns=REPORT_COLS + ["START-DISTANCE", "STOP-DISTANCE", "FLAG"]
+        )
+        return edits
+    # assign edit type (insertion, deletion, or snv)
+    edits["TYPE"] = edits.apply(lambda x : assign_etype(x[4], x[5]), axis=1)
+    # join targets and edits datasets
+    edits = edits.merge(targets, on="SITE")
+    # keep only the columns of interest
+    if exp_type == EXPERIMENTS[0]:  # circleseq
+        edits = edits[CIRCLESEQ_COLS]
+    else:  # guideseq
+        edits = edits[GUIDESEQ_COLS]
+    edits.columns = REPORT_COLS  # rename columns
+    # compute the distance between the called edits and their target site
+    edits["START-DISTANCE"] = edits.apply(
+        lambda x : compute_distance(int(x[2]), int(x[13])), axis=1
+    )
+    edits["STOP-DISTANCE"] = edits.apply(
+        lambda x : compute_distance(int(x[2]), int(x[14])), axis=1
+    )
+    # assess if the eidts occurred inside the expected target site
+    edits["FLAG"] = edits.apply(
+        lambda x : edit_location(int(x[2]), int(x[13]), int(x[14]), x[3], x[4], x[12]),
+        axis=1
+    )
+    return edits
+
+
 def report_mutect2(
     exp_type: str, guide: str, cell_type: str, outdir: str, offregion: bool
 ) -> None:
@@ -542,110 +651,12 @@ def report_mutect2(
         edits = pd.concat(
             [
                 edits_dataframe(edits_upstream, targets.SITE.tolist()),
-                edits_dataframe(edits_downstream, targets.SITE.tolist()),
+                edits_dataframe(edits_downstream, targets.SITE.tolist())
             ]
         )
     else:
         edits = edits_dataframe(edits, targets.SITE.tolist())
-    if not edits.empty:
-        # assign edit type (insertion, deletion, or snv)
-        edits["TYPE"] = edits.apply(lambda x: assign_etype(x[4], x[5]), axis=1)
-        # join targets and edits datasets
-        edits = edits.merge(targets, on="SITE")
-        # keep only the columns of interest
-        if exp_type == EXPERIMENTS[0]:  # circleseq
-            keep = [
-                "SITE",
-                "CHROM",
-                "POS",
-                "REF",
-                "ALT",
-                "FILTER",
-                "DP-NORMAL",
-                "DP-TUMOR",
-                "AD-NORMAL-REF",
-                "AD-NORMAL-ALT",
-                "AD-TUMOR-REF",
-                "AD-TUMOR-ALT",
-                "TYPE",
-                "Start",
-                "End",
-                "Strand",
-                "Distance",
-            ]
-        else:  # guideseq
-            keep = [
-                "SITE",
-                "CHROM",
-                "POS",
-                "REF",
-                "ALT",
-                "FILTER",
-                "DP-NORMAL",
-                "DP-TUMOR",
-                "AD-NORMAL-REF",
-                "AD-NORMAL-ALT",
-                "AD-TUMOR-REF",
-                "AD-TUMOR-ALT",
-                "TYPE",
-                "start",
-                "end",
-                "Strand",
-                "Mismatch Total",
-            ]
-        edits = edits[keep]
-        edits.columns = [
-            "SITE",
-            "CHROM",
-            "VAR-POS",
-            "REF",
-            "ALT",
-            "FILTER",
-            "DP-NORMAL",
-            "DP-TUMOR",
-            "AD-NORMAL-REF",
-            "AD-NORMAL-ALT",
-            "AD-TUMOR-REF",
-            "AD-TUMOR-ALT",
-            "TYPE",
-            "TARGET-START",
-            "TARGET-STOP",
-            "STRAND",
-            "MISMATCHES",
-        ]  # rename columns
-        # compute the distance between the called edits and their target site
-        edits["START-DISTANCE"] = edits.apply(
-            lambda x: compute_distance(int(x[2]), int(x[13])), axis=1
-        )
-        edits["STOP-DISTANCE"] = edits.apply(
-            lambda x: compute_distance(int(x[2]), int(x[14])), axis=1
-        )
-        # assess if the edits occurred inside the expected target sites
-        edits["FLAG"] = edits.apply(
-            lambda x: edit_location(int(x[2]), int(x[13]), int(x[14]), x[3], x[4], x[12]),
-            axis=1,
-        )
-    else:
-        columns = [
-            "SITE",
-            "CHROM",
-            "VAR-POS",
-            "REF",
-            "ALT",
-            "FILTER",
-            "DP-NORMAL",
-            "DP-TUMOR",
-            "AD-NORMAL-REF",
-            "AD-NORMAL-ALT",
-            "AD-TUMOR-REF",
-            "AD-TUMOR-ALT",
-            "TYPE",
-            "TARGET-START",
-            "TARGET-STOP",
-            "STRAND",
-            "MISMATCHES",
-        ]
-        edits = pd.DataFrame(columns=columns)
+    edits = process_edits_dataframe(edits, targets, exp_type)
     # write the report
     outfile = os.path.join(
         outdir, f"{VCALLINGTOOLS[0]}_{exp_type}_{cell_type}_{guide}_{region}.tsv"
@@ -778,109 +789,144 @@ def report_strelka(
                 edits_dataframe(edits_indels, targets.SITE.tolist(), strelka=True),
             ]
         )
-    if not edits.empty:  # following operations only if edits have been called
-        # assign edit type (insertion, deletion, or snv)
-        edits["TYPE"] = edits.apply(lambda x: assign_etype(x[4], x[5]), axis=1)
-        # join targets and edits dataset
-        edits = edits.merge(targets, on="SITE")
-        # keep only columns of interest
-        if exp_type == EXPERIMENTS[0]:  # circleseq
-            keep = [
-                "SITE",
-                "CHROM",
-                "POS",
-                "REF",
-                "ALT",
-                "FILTER",
-                "DP-NORMAL",
-                "DP-TUMOR",
-                "AD-NORMAL-REF",
-                "AD-NORMAL-ALT",
-                "AD-TUMOR-REF",
-                "AD-TUMOR-ALT",
-                "TYPE",
-                "Start",
-                "End",
-                "Strand",
-                "Distance",
-            ]
-        else:  # guideseq
-            keep = [
-                "SITE",
-                "CHROM",
-                "POS",
-                "REF",
-                "ALT",
-                "FILTER",
-                "DP-NORMAL",
-                "DP-TUMOR",
-                "AD-NORMAL-REF",
-                "AD-NORMAL-ALT",
-                "AD-TUMOR-REF",
-                "AD-TUMOR-ALT",
-                "TYPE",
-                "start",
-                "end",
-                "Strand",
-                "Mismatch Total",
-            ]
-        edits = edits[keep]
-        edits.columns = [
-            "SITE",
-            "CHROM",
-            "VAR-POS",
-            "REF",
-            "ALT",
-            "FILTER",
-            "DP-NORMAL",
-            "DP-TUMOR",
-            "AD-NORMAL-REF",
-            "AD-NORMAL-ALT",
-            "AD-TUMOR-REF",
-            "AD-TUMOR-ALT",
-            "TYPE",
-            "TARGET-START",
-            "TARGET-STOP",
-            "STRAND",
-            "MISMATCHES",
-        ]  # rename columns
-        # compute the distance between the called edits and their target site
-        edits["START-DISTANCE"] = edits.apply(
-            lambda x: compute_distance(int(x[2]), int(x[13])), axis=1
-        )
-        edits["STOP-DISTANCE"] = edits.apply(
-            lambda x: compute_distance(int(x[2]), int(x[14])), axis=1
-        )
-        # assess if the edits occurred inside the expected target sites
-        edits["FLAG"] = edits.apply(
-            lambda x: edit_location(int(x[2]), int(x[13]), int(x[14]), x[3], x[4], x[12]),
-            axis=1,
-        )
-    else:
-        columns = [
-            "SITE",
-            "CHROM",
-            "VAR-POS",
-            "REF",
-            "ALT",
-            "FILTER",
-            "DP-NORMAL",
-            "DP-TUMOR",
-            "AD-NORMAL-REF",
-            "AD-NORMAL-ALT",
-            "AD-TUMOR-REF",
-            "AD-TUMOR-ALT",
-            "TYPE",
-            "TARGET-START",
-            "TARGET-STOP",
-            "STRAND",
-            "MISMATCHES",
-        ]
-        edits = pd.DataFrame(columns=columns)
+    # build the edits dataset
+    edits = process_edits_dataframe(edits, targets, exp_type)
     # write the report
     outfile = os.path.join(
         outdir, f"{VCALLINGTOOLS[1]}_{exp_type}_{cell_type}_{guide}_{region}.tsv"
     )
+    edits.to_csv(outfile, sep="\t", index=False)
+
+
+def report_pindel(
+    exp_type: str, guide: str, cell_type: str, outdir: str, offregion: bool
+) -> None:
+    """The function constructs the edits report using the variants called by 
+    Pindel.
+
+    ...
+
+    Parameters
+    ----------
+    exp_type
+        Experiment type
+    guide
+        Input guide
+    cell_type
+        Cell type
+    outdir
+        Output directory
+    offregion
+
+    Returns
+    -------
+    None
+    """
+
+    if not isinstance(exp_type, str):
+        raise TypeError(f"Expected {str.__name__}, got {type(exp_type).__name__}")
+    if exp_type not in EXPERIMENTS:
+        raise ValueError(f"Forbidden experiment type ({exp_type})")
+    if not isinstance(guide, str):
+        raise TypeError(f"Expected {str.__name__}, got {type(guide).__name__}")
+    if not guide in GUIDES:
+        raise ValueError(f"Forbidden guide ({guide})")
+    if not isinstance(cell_type, str):
+        raise TypeError(f"Expected {str.__name__}, got {type(cell_type).__name__}")
+    if cell_type not in CELLTYPES:
+        raise ValueError(f"Forbidden cell type ({cell_type})")
+    # read target sites
+    targets = read_targets(exp_type, guide)
+    # parse VCFs
+    region = "offregion" if offregion else "onregion"
+    edits_dir = os.path.join(
+        EDITS, VCALLINGTOOLS[2], exp_type, cell_type, region, guide
+    )
+    if offregion:
+        edits_upstream_deletions = targets.apply(
+            lambda x : read_vcf(
+                os.path.join(
+                    edits_dir,
+                    f"{x[0]}_{int(x[1]) - 100 - PADSIZE}_{int(x[1]) - 100}_D.vcf"
+                )
+            ),
+            axis=1
+        )
+        edits_upstream_insertions = targets.apply(
+            lambda x : read_vcf(
+                os.path.join(
+                    edits_dir,
+                    f"{x[0]}_{int(x[1]) - 100 - PADSIZE}_{int(x[1]) - 100}_SI.vcf"
+                )
+            ),
+            axis=1
+        )
+        edits_downstream_deletions = targets.apply(
+            lambda x : read_vcf(
+                os.path.join(
+                    edits_dir,
+                    f"{x[0]}_{int(x[2]) + 100}_{int(x[2]) + 100 + PADSIZE}_D.vcf"
+                )
+            ),
+            axis=1
+        )
+        edits_downstream_insertions = targets.apply(
+            lambda x : read_vcf(
+                os.path.join(
+                    edits_dir,
+                    f"{x[0]}_{int(x[2]) + 100}_{int(x[2]) + 100 + PADSIZE}_SI.vcf"
+                )
+            ),
+            axis=1
+        )
+    else:
+        edits_deletions = targets.apply(
+            lambda x : read_vcf(
+                os.path.join(
+                    edits_dir,
+                    f"{x[0]}_{int(x[1]) - PADSIZE}_{int(x[2]) + PADSIZE}_D.vcf"
+                )
+            ),
+            axis=1
+        )
+        edits_insertions = targets.apply(
+            lambda x : read_vcf(
+                os.path.join(
+                    edits_dir,
+                    f"{x[0]}_{int(x[1]) - PADSIZE}_{int(x[2]) + PADSIZE}_SI.vcf"
+                )
+            ),
+            axis=1
+        )
+    if offregion:
+        edits = pd.concat(
+            [
+                pd.concat(
+                    [
+                        edits_dataframe(edits_upstream_deletions, targets.SITE.tolist(), pindel=True),
+                        edits_dataframe(edits_upstream_insertions, targets.SITE.tolist(), pindel=True)
+                    ]
+                ),
+                pd.concat(
+                    [
+                        edits_dataframe(edits_downstream_deletions, targets.SITE.tolist(), pindel=True),
+                        edits_dataframe(edits_downstream_insertions, targets.SITE.tolist(), pindel=True)
+                    ]
+                ),
+            ]
+        )
+    else:
+        edits = pd.concat(
+            [
+                edits_dataframe(edits_deletions, targets.SITE.tolist(), pindel=True),
+                edits_dataframe(edits_insertions, targets.SITE.tolist(), pindel=True)
+            ]
+        )
+    # build the edits dataframe
+    edits = process_edits_dataframe(edits, targets, exp_type)
+    outfile = os.path.join(
+        outdir, f"{VCALLINGTOOLS[2]}_{exp_type}_{cell_type}_{guide}_{region}.tsv"
+    )    
     edits.to_csv(outfile, sep="\t", index=False)
 
 
@@ -1009,105 +1055,8 @@ def report_varscan(
                 edits_dataframe(edits_indels, targets.SITE.tolist(), varscan=True)
             ]
         )
-    if not edits.empty:  # following operations performed only if edits have been called
-        # assign edit type (insertion, deletion, or snv)
-        edits["TYPE"] = edits.apply(lambda x : assign_etype(x[4], x[5]), axis=1)
-        # join targets and edits dataset
-        edits = edits.merge(targets, on="SITE")
-        # keep only columns of interest
-        if exp_type == EXPERIMENTS[0]:  # circleseq
-            keep = [
-                "SITE",
-                "CHROM",
-                "POS",
-                "REF",
-                "ALT",
-                "FILTER",
-                "DP-NORMAL",
-                "DP-TUMOR",
-                "AD-NORMAL-REF",
-                "AD-NORMAL-ALT",
-                "AD-TUMOR-REF",
-                "AD-TUMOR-ALT",
-                "TYPE",
-                "Start",
-                "End",
-                "Strand",
-                "Distance",
-            ]
-        else:  # guideseq
-            keep = [
-                "SITE",
-                "CHROM",
-                "POS",
-                "REF",
-                "ALT",
-                "FILTER",
-                "DP-NORMAL",
-                "DP-TUMOR",
-                "AD-NORMAL-REF",
-                "AD-NORMAL-ALT",
-                "AD-TUMOR-REF",
-                "AD-TUMOR-ALT",
-                "TYPE",
-                "start",
-                "end",
-                "Strand",
-                "Mismatch Total",
-            ]
-        edits = edits[keep]
-        edits.columns = [
-            "SITE",
-            "CHROM",
-            "VAR-POS",
-            "REF",
-            "ALT",
-            "FILTER",
-            "DP-NORMAL",
-            "DP-TUMOR",
-            "AD-NORMAL-REF",
-            "AD-NORMAL-ALT",
-            "AD-TUMOR-REF",
-            "AD-TUMOR-ALT",
-            "TYPE",
-            "TARGET-START",
-            "TARGET-STOP",
-            "STRAND",
-            "MISMATCHES",
-        ]  # rename columns
-        # compute the distance between the called edits and their target site
-        edits["START-DISTANCE"] = edits.apply(
-            lambda x: compute_distance(int(x[2]), int(x[13])), axis=1
-        )
-        edits["STOP-DISTANCE"] = edits.apply(
-            lambda x: compute_distance(int(x[2]), int(x[14])), axis=1
-        )
-        # assess if the edits occurred inside the expected target sites
-        edits["FLAG"] = edits.apply(
-            lambda x: edit_location(int(x[2]), int(x[13]), int(x[14]), x[3], x[4], x[12]),
-            axis=1,
-        )
-    else:
-        columns = [
-            "SITE",
-            "CHROM",
-            "VAR-POS",
-            "REF",
-            "ALT",
-            "FILTER",
-            "DP-NORMAL",
-            "DP-TUMOR",
-            "AD-NORMAL-REF",
-            "AD-NORMAL-ALT",
-            "AD-TUMOR-REF",
-            "AD-TUMOR-ALT",
-            "TYPE",
-            "TARGET-START",
-            "TARGET-STOP",
-            "STRAND",
-            "MISMATCHES",
-        ]
-        edits = pd.DataFrame(columns=columns)
+    # build the edits dataset
+    edits = process_edits_dataframe(edits, targets, exp_type)
     # write the report
     outfile = os.path.join(
         outdir, f"{VCALLINGTOOLS[3]}_{exp_type}_{cell_type}_{guide}_{region}.tsv"
