@@ -1,6 +1,7 @@
 """Run Strelka on the set of regions specified in the input file.
 """
 
+from tqdm import tqdm
 from glob import glob
 
 import subprocess
@@ -9,14 +10,17 @@ import sys
 import os
 
 
-STRELKACONFIG = "configureStrelkaSomaticWorkflow.py"
-STRELKARUN = "runWorkflow.py"
-PADSIZE = 10000
+STRELKACONFIG = "configureStrelkaSomaticWorkflow.py"  # strelka config file
+STRELKARUN = "runWorkflow.py"  # strelka workflow run
+PADSIZE = 10000  # region padding size (10kb)
 
 
 def parse_commandline():
-    """The function parses the command line arguments."""
+    """The function parses the command line arguments provided as input
 
+    :return: parsed input arguments
+    :rtype: argparse.Namespace
+    """
     parser = argparse.ArgumentParser(
         formatter_class=argparse.RawTextHelpFormatter,
         description="Script to call variants in the specified regions using Strelka",
@@ -82,13 +86,17 @@ def parse_commandline():
         "overlapping the original site)",
     )
     parser.add_argument("--out", type=str, metavar="OUTDIR", help="Output directory")
-    args = parser.parse_args()
-    return args
-
+    return parser.parse_args()
 
 def parse_targets(targetfile):
-    """The function parses the target sites file."""
+    """Parse the guide targets file
 
+    :param targetfile: guide targets file
+    :type targetfile: str
+    :raises OSError: raise on read() failure
+    :return: targets file lines
+    :rtype: List[str]
+    """
     try:
         handle = open(targetfile, mode="r")
         lines = [line.strip().split() for i, line in enumerate(handle) if i > 0]
@@ -100,8 +108,21 @@ def parse_targets(targetfile):
 
 
 def compute_regions(lines, chrom_col, start_col, stop_col, offregion):
-    """The function computes the padded target regions"""
+    """Pad the target sites by 10kb upstream and downstream
 
+    :param lines: targets file lines
+    :type lines: List[str]
+    :param chrom_col: chromosome data columns
+    :type chrom_col: int
+    :param start_col: start data columns
+    :type start_col: int
+    :param stop_col: stop data columns
+    :type stop_col: int
+    :param offregion: pad off regions
+    :type offregion: bool
+    :return: padded regions
+    :rtype: List[str]
+    """
     if offregion:  # upstream and downstream target sites shift
         regions = [
             "%s:%s-%s"
@@ -136,16 +157,41 @@ def compute_regions(lines, chrom_col, start_col, stop_col, offregion):
 
 
 def get_names(regions):
-    """The function returns a list containing the targets names."""
+    """Recover target sites names
 
+    :param regions: padded target sites
+    :type regions: List[str]
+    :return: target sites names 
+    :rtype: List[str]
+    """
     names_list = [region.replace(":", "_").replace("-", "_") for region in regions]
     assert len(names_list) == len(regions)
     return names_list
 
 
 def strelka(normal_bam, tumor_bam, genome, region, name, rundir, outdir):
-    """The function runs Strelka on the input region."""
+    """Run Strelka on the input target site
 
+    :param normal_bam: BAM file
+    :type normal_bam: str
+    :param tumor_bam: BAM file
+    :type tumor_bam: str
+    :param genome: genome
+    :type genome: str
+    :param region: target site
+    :type region: str
+    :param name: region name
+    :type name: str
+    :param rundir: run directory
+    :type rundir: str
+    :param outdir: output directory
+    :type outdir: str
+    :raises OSError: raise on strelka config failure
+    :raises OSError: raise on strelka analysis failure
+    :raises OSError: raise on gunzip failure
+    :raises OSError: raise on mv failure
+    :raises OSError: raise on mv failure
+    """
     # run config script
     cmd = (
         "%s --normalBam %s --tumorBam %s --referenceFasta %s --region %s --exome --runDir %s"
@@ -153,24 +199,24 @@ def strelka(normal_bam, tumor_bam, genome, region, name, rundir, outdir):
     )
     code = subprocess.call(cmd, shell=True)
     if code != 0:
-        raise OSError('An error occurred while running "%s"' % (cmd))
+        raise OSError("An error occurred while running %s" % (cmd))
     # call variants
     cmd = "python %s -m local --quiet" % (os.path.join(rundir, STRELKARUN))
     code = subprocess.call(cmd, shell=True)
     if code != 0:
-        raise OSError('An error occurred while running "%s"' % (cmd))
+        raise OSError("An error occurred while running %s" % (cmd))
     # recover results
     vcfsgz = glob(os.path.join(rundir, "results/variants/*.vcf.gz"))
     for vcfgz in vcfsgz:
         code = subprocess.call("gunzip %s" % (vcfgz), shell=True)
         if code != 0:
-            raise OSError('An error occurred while running "%s"' % (cmd))
+            raise OSError("An error occurred while running %s" % (cmd))
     vcfs = glob(os.path.join(rundir, "results/variants/*.vcf"))
     for vcf in vcfs:
         cmd = "mv %s %s" % (vcf, outdir)
         code = subprocess.call(cmd, shell=True)
         if code != 0:
-            raise OSError('An error occurred while running "%s"' % (cmd))
+            raise OSError("An error occurred while running %s" % (cmd))
     vcfs = glob(os.path.join(outdir, "somatic.*.vcf"))
     for vcf in vcfs:
         cmd = "mv %s %s" % (
@@ -179,13 +225,13 @@ def strelka(normal_bam, tumor_bam, genome, region, name, rundir, outdir):
         )
         code = subprocess.call(cmd, shell=True)
         if code != 0:
-            raise OSError('An error occurred while running "%s"' % (cmd))
+            raise OSError("An error occurred while running %s" % (cmd))
     # remove temporary results
     tmpdata = os.listdir(rundir)
     for d in tmpdata:
         code = subprocess.call("rm -rf %s" % (os.path.join(rundir, d)), shell=True)
         if code != 0:
-            raise OSError('An error occurred while running "%s"' % (cmd))
+            raise OSError("An error occurred while running %s" % (cmd))
 
 
 def main():
@@ -198,7 +244,7 @@ def main():
     )
     # run strelka
     names = get_names(regions)
-    for i, region in enumerate(regions):
+    for i, region in tqdm(enumerate(regions)):
         strelka(
             args.normal_bam,
             args.tumor_bam,

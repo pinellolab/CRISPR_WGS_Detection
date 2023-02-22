@@ -7,14 +7,18 @@ import argparse
 import os
 
 
-SAMTOOLS = "samtools mpileup"
+SAMTOOLS = "samtools mpileup"  # samtools mpileup
 SAMTOOLSTMP = tempfile.mkdtemp()  # stores temporary MPILEUP files
-VARSCAN = "varscan somatic"
-PADSIZE = 10000
+VARSCAN = "varscan somatic"  # varscan
+PADSIZE = 10000  # pad regions by 10Kb
 
 
 def parse_commandline():
-    """The function parses the command line arguments."""
+    """The function parses the command line arguments provided as input
+
+    :return: parsed input arguments
+    :rtype: argparse.Namespace
+    """
 
     parser = argparse.ArgumentParser(
         formatter_class=argparse.RawTextHelpFormatter,
@@ -67,15 +71,20 @@ def parse_commandline():
         "overlapping the original site)",
     )
     parser.add_argument("--out", type=str, metavar="OUTDIR", help="Output directory")
-    args = parser.parse_args()
-    return args
+    return parser.parse_args()
 
 
 def parse_targets(targets):
-    """The function parses the target sites file."""
+    """Parse the guide targets file
 
+    :param targets: guide target sites file
+    :type targets: str
+    :raises OSError: raise on read() failure
+    :return: targets file lines
+    :rtype: List[str]
+    """
     try:
-        handle = open(targets, mode="r")
+        handle = open(targets, mode="r")  # parse the targets file
         lines = [
             line.strip().split() for i, line in enumerate(handle) if i > 0
         ]  # skip header
@@ -87,17 +96,35 @@ def parse_targets(targets):
 
 
 def get_names(regions):
-    """The function assign a name to each input region."""
+    """Recover target sites names
 
+    :param regions: padded target sites
+    :type regions: List[str]
+    :return: target sites names 
+    :rtype: List[str]
+    """
     names_list = [region.replace(":", "_").replace("-", "_") for region in regions]
     assert len(names_list) == len(regions)
     return names_list
 
 
 def compute_regions(lines, chrom_col, start_col, stop_col, offregion):
-    """The function computes the padded genomic regions."""
+    """Pad the target sites by 10kb upstream and downstream
 
-    if offregion:
+    :param lines: targets file lines
+    :type lines: List[str]
+    :param chrom_col: chromosome data columns
+    :type chrom_col: int
+    :param start_col: start data columns
+    :type start_col: int
+    :param stop_col: stop data columns
+    :type stop_col: int
+    :param offregion: pad off regions
+    :type offregion: bool
+    :return: padded regions
+    :rtype: List[str]
+    """
+    if offregion:  # upstream and downstream target sites shift
         regions = [
             "%s:%s-%s"
             % (
@@ -116,7 +143,7 @@ def compute_regions(lines, chrom_col, start_col, stop_col, offregion):
             for line in lines
         ]
         assert len(regions) == (len(lines) * 2)
-    else:
+    else:  # pad target regions
         regions = [
             "%s:%s-%s"
             % (

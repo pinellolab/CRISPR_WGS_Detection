@@ -1,16 +1,14 @@
 """Run GATK Mutect2 on the set of regions specified in the input file.
 """
 
-from typing import Optional
 from glob import glob
 from tqdm import tqdm
 
 import pandas as pd
-import numpy as np
 
+import multiprocessing
 import subprocess
 import argparse
-import sys
 import os
 
 MUTECT2 = "gatk Mutect2"  # Mutect2
@@ -19,24 +17,19 @@ PADSIZE = 10000  # pad regions by 10Kb upstream and downstream
 COORDSCOL = "coords_mutect_region"  # coordinates column name
 
 
-def parse_commandline() -> argparse.ArgumentParser:
-    """The function parses the command line arguments.
+def parse_commandline():
+    """The function parses the command line arguments provided as input
 
-    ...
-
-    Parameters
-    ----------
-    None
-
-    Returns
-    -------
-    argparse.ArgumentParser
+    :return: parsed input arguments
+    :rtype: argparse.Namespace
     """
-
     parser = argparse.ArgumentParser(
         formatter_class=argparse.RawTextHelpFormatter,
         description="Script to call variants in the specified input regions",
-        usage="\n\tpython3 %(prog)s --targets <TARGETS-FILE> --genome <GENOME> --bam1 <BAM> --bam2 <BAM> --normal <NORMAL-SAMPLE> --chrom-col <CHR-COL-NUM> --start-col <START-COL-NUM> --stop-col <STOP-COL-NUM> --name-col <NAME-COL-NUM> --offregion --out <OUTDIR>",
+        usage="\n\tpython %(prog)s --targets <TARGETS-FILE> --genome <GENOME> "
+              "--bam1 <BAM> --bam2 <BAM> --normal <NORMAL-SAMPLE> --chrom-col "
+              "<CHR-COL-NUM> --start-col <START-COL-NUM> --stop-col <STOP-COL-NUM> " 
+              "--name-col <NAME-COL-NUM> --offregion --out <OUTDIR> --threads <THREADS>",
     )
     parser.add_argument(
         "--targets", type=str, metavar="TARGETS-FILE", help="Targets coordinates file"
@@ -83,131 +76,117 @@ def parse_commandline() -> argparse.ArgumentParser:
         "overlapping the original site)",
     )
     parser.add_argument("--out", type=str, metavar="OUTDIR", help="Output directory")
-    args = parser.parse_args()
-    # check arguments consistency
-    __check_args(args)
+    parser.add_argument(
+        "--threads",
+        type=int,
+        metavar="THREADS",
+        nargs="?",
+        default=1,
+        help="Number of threads to use during the run",
+    )
+    args = parser.parse_args()  # parse command line
+    _check_args(args)  # check arguments consistency
     return args
 
 
-def __check_args(args: argparse.Namespace) -> None:
-    """(PRIVATE)
+def _check_args(args):
+    """ (PRIVATE)
+    Check input arguments consistency
 
-    The function checks input arguments consistency.
-
-    ...
-
-    Parameters
-    ----------
-    args
-        Input arguments
-
-    Returns
-    -------
-    None
+    :param args: input arguments
+    :type args: argparse.Namespace
     """
-
     if not isinstance(args, argparse.Namespace):
         raise TypeError(
-            f"Expected {argparse.ArgumentParser.__name__}, got {type(args).__name__}"
+            "Expected %s, got %s" % (argparse.ArgumentParser.__name__, type(args).__name__)
         )
     if not isinstance(args.targets, str):
-        raise TypeError(f"Expected {str.__name__}, got {type(args.targets).__name__}")
+        raise TypeError("Expected %s, got %s" % (str.__name__, type(args.targets).__name__))
     if not os.path.isfile(args.targets):
-        raise FileNotFoundError(f"Unable to locate {args.targets}")
+        raise FileNotFoundError("Unable to locate %s" % (args.targets))
     if not isinstance(args.genome, str):
-        raise TypeError(f"Expected {str.__name__}, got {type(args.genome).__name__}")
+        raise TypeError("Expected %s, got %s" % (str.__name__, type(args.genome).__name__))
     if not os.path.isfile(args.genome):
-        raise FileNotFoundError(f"Unable to locate {args.genome}")
+        raise FileNotFoundError("Unable to locate %s" % (args.genome))
     if not isinstance(args.bam1, str):
-        raise TypeError(f"Expected {str.__name__}, got {type(args.bam1).__name__}")
+        raise TypeError("Expected %s, got %s" % (str.__name__, type(args.bam1).__name__))
     if not os.path.isfile(args.bam1):
-        raise FileNotFoundError(f"Unable to locate {args.bam1}")
+        raise FileNotFoundError("Unable to locate %s" % (args.bam1))
     if not isinstance(args.bam2, str):
-        raise TypeError(f"Expected {str.__name__}, got {type(args.bam2).__name__}")
+        raise TypeError("Expected %s, got %s" % (str.__name__, type(args.bam2).__name__))
     if not os.path.isfile(args.bam2):
-        raise FileNotFoundError(f"Unable to locate {args.bam2}")
+        raise FileNotFoundError("Unable to locate %s" % (args.bam2))
     if not isinstance(args.chrom_col, int):
-        raise TypeError(f"Expected {int.__name__}, got {type(args.chrom_col).__name__}")
+        raise TypeError("Expected %s, got %s" % (int.__name__, type(args.chrom_col).__name__))
     if args.chrom_col < 0:
-        raise ValueError(f"Wrong chromosome column number ({args.chrom_col})")
+        raise ValueError("Wrong chromosome column number (%d)" % (args.chrom_col))
     if not isinstance(args.start_col, int):
-        raise TypeError(f"Expected {int.__name__}, got {type(args.start_col).__name__}")
+        raise TypeError("Expected %s, got %s" % (int.__name__, type(args.start_col).__name__))
     if args.start_col < 0:
-        raise ValueError(f"Wrong start column number ({args.start_col})")
+        raise ValueError("Wrong start column number (%d)" % (args.start_col))
     if not isinstance(args.stop_col, int):
-        raise TypeError(f"Expected {int.__name__}, got {type(args.stop_col).__name__}")
+        raise TypeError("Expected %s, got %s" % (int.__name__, type(args.stop_col).__name__))
     if args.stop_col < 0:
-        raise ValueError(f"Wrong stop column number ({args.stop_col})")
+        raise ValueError("Wrong stop column number (%d)" % (args.stop_col))
     if not isinstance(args.name_col, int):
-        raise TypeError(f"Expected {int.__name__}, got {type(args.name_col).__name__}")
+        raise TypeError("Expected %s, got %s" % (int.__name__, type(args.name_col).__name__))
     if args.name_col < 0:
-        raise ValueError(f"Wrong name column number ({args.name_col})")
+        raise ValueError("Wrong name column number (%d)" % (args.name_col))
 
+def compute_coordinates(chrom, start, stop):
+    """Computes genomic coordinates string
 
-def compute_coordinates(chrom: str, start: int, stop: int) -> str:
-    """The function computes the coordinate strings (format: <chrom:start-stop>
-
-    ...
-
-    Parameters
-    ----------
-    chrom
-        Chromosome
-    start
-        Start position
-    stop
-        Stop position
-
-    Returns
-    -------
-    str
+    :param chrom: chromosome
+    :type chrom: str
+    :param start: start
+    :type start: int
+    :param stop: stop
+    :type stop: int
+    :raises TypeError: raise on chrom type mismatch
+    :raises TypeError: raise on start type mismatch
+    :raises TypeError: raise on stop type mismatch
+    :raises ValueError: raise if start > stop
+    :return: genomic coordinate
+    :rtype: str
     """
-
     if not isinstance(chrom, str):
-        raise TypeError(f"Expected {str.__name__}, got {type(chrom).__name__}")
+        raise TypeError("Expected %s, got %s" % (str.__name__, type(chrom).__name__))
     if not isinstance(start, int):
-        raise TypeError(f"Expected {int.__name__}, got {type(start).__name__}")
+        raise TypeError("Expected %s, got %s" % (int.__name__, type(start).__name__))
     if not isinstance(stop, int):
-        raise TypeError(f"Expected {int.__name__}, got {type(stop).__name__}")
+        raise TypeError("Expected %s, got %s" % (int.__name__, type(stop).__name__))
     if stop < start:
         raise ValueError(
-            f"Wrong start and stop coordinates (stop < start -- {stop} < {start})"
+            "Wrong start and stop coordinates (stop < start -- %d < %d)" % (stop, start)
         )
-    coord = f"{chrom}:{start}-{stop}"
-    return coord
+    return "%s:%d-%d" % (chrom, start, stop)
 
+def parse_targets_coordinates(targets_file, chrom_col, start_col, stop_col, offregion):
+    """Reda the input guide targets regions and pad them by 10kb upstream and 
+    downstream
 
-def parse_targets_coordinates(
-    targets_file: str, chrom_col: int, start_col: int, stop_col: int, offregion: bool
-) -> pd.DataFrame:
-    """The function reads the input guide sequences file. The function pad the
-    guide coordinates by 10 Kbs upstream and downstream.
-
-    ...
-
-    Parameters
-    ----------
-    targets_file
-        Input guide sequences file
-    chrom_col
-        Chromosome column number
-    start_col
-        Start coordinate columns number
-    stop_col
-        Stop coordinate column number
-    offregion
-        Shift the start and stop coordinates by 100 bp upstream and downstream
-        with respect to the original target site
-
-    Returns
-    -------
-    pd.DataFrame
+    :param targets_file: guide target regions file
+    :type targets_file: str
+    :param chrom_col: chromosome data column
+    :type chrom_col: int
+    :param start_col: start data column
+    :type start_col: int
+    :param stop_col: stop data column
+    :type stop_col: int
+    :param offregion: compute off regions
+    :type offregion: bool
+    :raises TypeError: raise on targets_file type mismatch
+    :raises FileNotFoundError: raise if targets_file cannot be found
+    :raises IndexError: chromosome column index out of dataframe columns
+    :raises IndexError: start column index out of dataframe columns
+    :raises IndexError: stop column index out of dataframe columns
+    :return: processed guide targets dataset
+    :rtype: pd.DataFrame
     """
-
     if not isinstance(targets_file, str):
-        raise TypeError(f"Expected {str.__name__}, got {type(targets_file).__name__}")
+        raise TypeError("Expected %s, got %s" % (str.__name__, type(targets_file).__name__))
     if not os.path.isfile(targets_file):
-        raise FileNotFoundError(f"Unable to locate {targets_file}")
+        raise FileNotFoundError("Unable to locate %s" % (targets_file))
     targets = pd.read_csv(targets_file, sep="\t")  # load the target TSV file
     # get chromosome, start and stop column names in the dataframe
     columns = targets.columns.tolist()
@@ -215,19 +194,19 @@ def parse_targets_coordinates(
         chrom_col = columns[chrom_col]
     except IndexError:
         raise IndexError(
-            f"The chromosome column number {chrom_col} is not in {targets_file}"
+            "The chromosome column number %d is not in %s" % (chrom_col, targets_file)
         )
     try:
         start_col = columns[start_col]
     except IndexError:
         raise IndexError(
-            f"The start coordinate column number {start_col} is not in {targets_file}"
+            "The start coordinate column number %d is not in %s" % (start_col, targets_file)
         )
     try:
         stop_col = columns[stop_col]
     except IndexError:
         raise IndexError(
-            f"The stop coordinate column number {stop_col} is not in {targets_file}"
+            "The stop coordinate column number %d is not in %s" % (stop_col, targets_file)
         )
     if offregion:  # off target regions
         targets1 = targets.copy()  # upstream shift
@@ -253,76 +232,35 @@ def parse_targets_coordinates(
     return targets
 
 
-def mutect2(
-    genome: str,
-    bam1: str,
-    bam2: str,
-    normal_sample: str,
-    region: str,
-    name: str,
-    outdir: str,
-) -> None:
-    """The function runs Mutect2 on the previously computed regions.
+def run_command(command):
+    """Run the command
 
-    ...
-
-    Parameters
-    ----------
-    genome
-        Genome
-    bam1
-        First BAM file
-    bam2
-        Second BAM file
-    normal_sample
-        Normal sample name
-    region
-        Genomic region
-    name
-        Output VCF filename
-    outdir
-        Output directory
-
-    Returns
-    -------
-    None
+    :param command: command
+    :type command: str
+    :return: command signal
+    :rtype: int
     """
+    return subprocess.call(command, shell=True)
 
-    outfile = os.path.join(outdir, f"{name}.{region}.vcf")
-    cmd = f"{MUTECT2} -R {genome} -I {bam1} -I {bam2} -normal {normal_sample} -L {region} -O {outfile}"
-    code = subprocess.call(
-        cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT
-    )
-    if code != 0:
-        raise subprocess.SubprocessError(f'An error occurred while running "{cmd}"')
+def run_commands(commands, threads):
+    """Run the input commands
 
-
-def filter_mutect(vcf: str, genome: str, vcfout: str) -> None:
-    """The function filters the mutations called by Mutect2 during the previous
-    step.
-
-    ...
-
-    Parameters
-    ----------
-    vcf
-        VCF file
-    genome
-        Genome
-    vcfout
-        Ouput VCF filename
-
-    Returns
-    -------
-    None
+    :param commands: input commands
+    :type commands: List[str]
+    :param threads: threads
+    :type threads: int
+    :raises OSError: raise on Mutect2 failure
     """
-
-    cmd = f"{FILTER} -V {vcf} -R {genome} -O {vcfout}"
-    code = subprocess.call(
-        cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT
-    )
-    if code != 0:
-        raise subprocess.SubprocessError(f'An error occurred while running "{cmd}"')
+    pool = multiprocessing.Pool(processes=threads)  # create `threads` threads
+    result = pool.map_async(run_command, commands)  # run commands in parallel
+    with tqdm(total=len(commands)) as progress:
+        while not result.ready():
+            remaining = result._number_left
+            progress.update(len(commands) - remaining)
+    codes = result.get()
+    for code, cmd in zip(codes, commands):
+        if code != 0:
+            raise OSError("An error occurred while running %s" % (cmd))
 
 
 def main():
@@ -334,24 +272,22 @@ def main():
     )
     assert COORDSCOL in targets.columns.tolist()
     # run Mutect2 on each padded guide region
-    tqdm.pandas()
-    targets.progress_apply(
-        lambda x: mutect2(
-            args.genome,
-            args.bam1,
-            args.bam2,
-            args.normal,
-            x[COORDSCOL],
-            x[args.name_col],
-            args.out,
-        ),
-        axis=1,
-    )
+    coords = targets[COORDSCOL].tolist()
+    names = targets[args.name_col].tolist()
+    commands = [  # force stdout to /dev/null
+        "%s -R %s -I %s -I %s -normal %s -L %s -O %s > /dev/null" % (
+            MUTECT2, args.genome, args.bam1, args.bam2, args.normal, coord, os.path.join(args.out, "%s.%s.vcf" % (names[i], coord))
+        )
+        for i, coord in enumerate(coords)
+    ]
+    run_commands(commands, args.threads)
     # filter variants called
     vcfs = glob(os.path.join(args.out, "*.vcf"))
-    for vcf in tqdm(vcfs):
-        vcfout = f"{vcf}.filtered.vcf"
-        filter_mutect(vcf, args.genome, vcfout)
+    commands = [
+        "%s -V %s -R %s -O %s" % (FILTER, vcf, args.genome,  "%s.filtered.vcf" % (vcf))
+        for vcf in vcfs
+    ]
+    run_commands(commands, args.threads)
 
 
 if __name__ == "__main__":

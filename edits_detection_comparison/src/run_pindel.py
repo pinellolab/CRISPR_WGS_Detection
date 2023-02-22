@@ -1,27 +1,31 @@
 """Run pindel on the set of regions specified in the input file.
 """
 
+from tqdm import tqdm
+import multiprocessing
 import subprocess
 import argparse
 import tempfile
-import sys
 import os
 
-PINDEL = "pindel"
-PINDEL2VCF = "pindel2vcf"
-PADSIZE = 10000
+PINDEL = "pindel"  # Pindel
+PINDEL2VCF = "pindel2vcf"  # convert pindel's output to VCF files
+PADSIZE = 10000  # pad regions by 10Kb
 
 
 def parse_commandline():
-    """The function parses the command line arguments."""
+    """The function parses the command line arguments provided as input
 
+    :return: parsed input arguments
+    :rtype: argparse.Namespace
+    """
     parser = argparse.ArgumentParser(
         formatter_class=argparse.RawDescriptionHelpFormatter,
         description="Script to call variants in the specified regions using pindel.",
         usage="\n\tpython3 %(prog)s --targets <TARGETS-FILE> --genome <GENOME> "
         "--normal-bam <BAM> --normal-sample <NORMAL-SAMPLE> --tumor-bam <BAM> "
         " --tumor-sample <TUMOR-SAMPLE> --chrom-col <CHROM-COL-NUM> --start-col "
-        "<START-COL-NUM> --stop-col <STOP-COL-NUM> --out <OUTDIR>",
+        "<START-COL-NUM> --stop-col <STOP-COL-NUM> --out <OUTDIR> --threads <THREADS>",
     )
     parser.add_argument(
         "--targets", type=str, metavar="TARGETS-FILE", help="Target sites file"
@@ -80,18 +84,38 @@ def parse_commandline():
         "the original site)",
     )
     parser.add_argument("--out", type=str, metavar="OUTDIR", help="Output directory")
-    args = parser.parse_args()
-    return args
+    parser.add_argument(
+        "--threads",
+        type=int,
+        metavar="THREADS",
+        nargs="?",
+        default=1,
+        help="Number of threads to use during the run",
+    )
+    return parser.parse_args()
 
 
 def parse_targets_coordinates(targets_file, chrom_col, start_col, stop_col, offregion):
-    """The function parses the target sites file."""
+    """Parse the guide target sites file
 
-    handle = open(targets_file, mode="r")
+    :param targets_file: guide target sites file
+    :type targets_file: str
+    :param chrom_col: chromosome data columns
+    :type chrom_col: int
+    :param start_col: start data columns
+    :type start_col: int
+    :param stop_col: stop data columns
+    :type stop_col: int
+    :param offregion: pad off regions
+    :type offregion: bool
+    :return: padded guide target sites
+    :rtype: List[str]
+    """
+    handle = open(targets_file, mode="r")  # read the target sites file
     lines = [
         line.strip().split() for i, line in enumerate(handle) if i > 0
     ]  # skip header
-    if offregion:
+    if offregion:  # pad offregions
         regions = [
             "%s:%s-%s"
             % (
@@ -109,8 +133,8 @@ def parse_targets_coordinates(targets_file, chrom_col, start_col, stop_col, offr
             )
             for line in lines
         ]
-        assert len(regions) == (len(lines) * 2)
-    else:
+        assert len(regions) == (len(lines) * 2)  # 2 times the original input (up + downstream)
+    else:  # pad onregions
         regions = [
             "%s:%s-%s"
             % (
@@ -125,16 +149,32 @@ def parse_targets_coordinates(targets_file, chrom_col, start_col, stop_col, offr
 
 
 def get_names(regions):
-    """The function returns a list with the target names."""
+    """Recover guide target sites names  
 
+    :param regions: padded genomic regions
+    :type regions: List[str]
+    :return: guide target sites names
+    :rtype: List[str]
+    """
     names_list = [region.replace(":", "_").replace("-", "_") for region in regions]
     assert len(names_list) == len(regions)
     return names_list
 
 
 def config_file(tumor_bam, tumor_sample, normal_bam, normal_sample):
-    """The function writes the config file required by pindel."""
+    """Write the configfile required by Pindel
 
+    :param tumor_bam: BAM file
+    :type tumor_bam: str
+    :param tumor_sample: tumor sample name
+    :type tumor_sample: str
+    :param normal_bam: BAM file
+    :type normal_bam: str
+    :param normal_sample: normal sample name
+    :type normal_sample: str
+    :return: configfile
+    :rtype: str
+    """
     configfile = tempfile.NamedTemporaryFile().name
     handle = open(configfile, mode="w")
     handle.write("%s\t250\t%s\n" % (tumor_bam, tumor_sample))
@@ -143,26 +183,35 @@ def config_file(tumor_bam, tumor_sample, normal_bam, normal_sample):
     assert os.path.isfile(configfile)
     return os.path.abspath(configfile)
 
+def run_command(command):
+    """Run the command
 
-def pindel(configfile, genome, region, outdir, name):
-    """The function runs pindel on the input regions."""
+    :param command: command
+    :type command: str
+    :return: command signal
+    :rtype: int
+    """
+    return subprocess.call(command, shell=True)
 
-    # call variants
-    outfile = os.path.join(outdir, name)
-    cmd = "%s -f %s -i %s -c %s -o %s" % (PINDEL, genome, configfile, region, outfile)
-    code = subprocess.call(cmd, shell=True)
-    if code != 0:
-        raise OSError('An error occurred while running "%s"' % (cmd))
-    # convert pindel output in VCF format
-    cmd = "%s -p %s_D -r %s -R hg38 -d 20131217 -G" % (PINDEL2VCF, outfile, genome)
-    code = subprocess.call(cmd, shell=True)
-    if code != 0:
-        raise OSError('An error occurred while running "%s"' % (cmd))
-    cmd = "%s -p %s_SI -r %s -R hg38 -d 20131217 -G" % (PINDEL2VCF, outfile, genome)
-    code = subprocess.call(cmd, shell=True)
-    if code != 0:
-        raise OSError('An error occurred while running "%s"' % (cmd))
+def run_commands(commands, threads):
+    """Run the input commands
 
+    :param commands: input commands
+    :type commands: List[str]
+    :param threads: threads
+    :type threads: int
+    :raises OSError: raise on Mutect2 failure
+    """
+    pool = multiprocessing.Pool(processes=threads)  # create `threads` threads
+    result = pool.map_async(run_command, commands)  # run commands in parallel
+    with tqdm(total=len(commands)) as progress:
+        while not result.ready():
+            remaining = result._number_left
+            progress.update(len(commands) - remaining)
+    codes = result.get()
+    for code, cmd in zip(codes, commands):
+        if code != 0:
+            raise OSError("An error occurred while running %s" % (cmd))
 
 def main():
     # parse commandline
@@ -178,8 +227,29 @@ def main():
         args.tumor_bam, args.tumor_sample, args.normal_bam, args.normal_sample
     )
     # run pindel
-    for i, region in enumerate(regions):
-        pindel(configfile, args.genome, region, args.out, names[i])
+    commands = [
+        "%s -f %s -i %s -c %s -o %s" % (
+            PINDEL, args.genome, configfile, region, os.path.join(args.out, names[i])
+        )
+        for i, region in enumerate(regions)
+    ]
+    run_commands(commands, args.threads)
+    # convert pindel files in VCFs (deletions)
+    commands = [
+        "%s -p %s_D -r %s -R hg38 -d 20131217 -G" % (
+            PINDEL2VCF, os.path.join(args.out, name), args.genome
+        )
+        for name in names
+    ]
+    run_commands(commands, args.threads)
+    # convert pindel files in VCFs (insertions)
+    commands = [
+        "%s -p %s_SI -r %s -R hg38 -d 20131217 -G" % (
+            PINDEL2VCF, os.path.join(args.out, name), args.genome
+        )
+        for name in names
+    ]
+    run_commands(commands, args.threads)
     cmd = "rm %s" % (configfile)  # delete the config file
     code = subprocess.call(cmd, shell=True)
     if code != 0:
