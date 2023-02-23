@@ -88,6 +88,7 @@ def parse_commandline():
     parser.add_argument("--out", type=str, metavar="OUTDIR", help="Output directory")
     return parser.parse_args()
 
+
 def parse_targets(targetfile):
     """Parse the guide targets file
 
@@ -161,7 +162,7 @@ def get_names(regions):
 
     :param regions: padded target sites
     :type regions: List[str]
-    :return: target sites names 
+    :return: target sites names
     :rtype: List[str]
     """
     names_list = [region.replace(":", "_").replace("-", "_") for region in regions]
