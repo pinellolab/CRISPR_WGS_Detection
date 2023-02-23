@@ -133,7 +133,9 @@ def parse_targets_coordinates(targets_file, chrom_col, start_col, stop_col, offr
             )
             for line in lines
         ]
-        assert len(regions) == (len(lines) * 2)  # 2 times the original input (up + downstream)
+        assert len(regions) == (
+            len(lines) * 2
+        )  # 2 times the original input (up + downstream)
     else:  # pad onregions
         regions = [
             "%s:%s-%s"
@@ -149,7 +151,7 @@ def parse_targets_coordinates(targets_file, chrom_col, start_col, stop_col, offr
 
 
 def get_names(regions):
-    """Recover guide target sites names  
+    """Recover guide target sites names
 
     :param regions: padded genomic regions
     :type regions: List[str]
@@ -183,6 +185,7 @@ def config_file(tumor_bam, tumor_sample, normal_bam, normal_sample):
     assert os.path.isfile(configfile)
     return os.path.abspath(configfile)
 
+
 def run_command(command):
     """Run the command
 
@@ -192,6 +195,7 @@ def run_command(command):
     :rtype: int
     """
     return subprocess.call(command, shell=True)
+
 
 def run_commands(commands, threads):
     """Run the input commands
@@ -213,6 +217,7 @@ def run_commands(commands, threads):
         if code != 0:
             raise OSError("An error occurred while running %s" % (cmd))
 
+
 def main():
     # parse commandline
     args = parse_commandline()
@@ -228,25 +233,22 @@ def main():
     )
     # run pindel
     commands = [
-        "%s -f %s -i %s -c %s -o %s" % (
-            PINDEL, args.genome, configfile, region, os.path.join(args.out, names[i])
-        )
+        "%s -f %s -i %s -c %s -o %s"
+        % (PINDEL, args.genome, configfile, region, os.path.join(args.out, names[i]))
         for i, region in enumerate(regions)
     ]
     run_commands(commands, args.threads)
     # convert pindel files in VCFs (deletions)
     commands = [
-        "%s -p %s_D -r %s -R hg38 -d 20131217 -G" % (
-            PINDEL2VCF, os.path.join(args.out, name), args.genome
-        )
+        "%s -p %s_D -r %s -R hg38 -d 20131217 -G"
+        % (PINDEL2VCF, os.path.join(args.out, name), args.genome)
         for name in names
     ]
     run_commands(commands, args.threads)
     # convert pindel files in VCFs (insertions)
     commands = [
-        "%s -p %s_SI -r %s -R hg38 -d 20131217 -G" % (
-            PINDEL2VCF, os.path.join(args.out, name), args.genome
-        )
+        "%s -p %s_SI -r %s -R hg38 -d 20131217 -G"
+        % (PINDEL2VCF, os.path.join(args.out, name), args.genome)
         for name in names
     ]
     run_commands(commands, args.threads)

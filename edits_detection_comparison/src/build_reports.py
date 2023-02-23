@@ -2,37 +2,24 @@
 tools considered in the study. The reports are stored as TSV files.
 """
 
-from typing import List, Optional
 from tqdm import tqdm
 
 import pandas as pd
 
 import argparse
-import sys
 import os
 
-
 # data directories
-BASEDIR = "/data/pinello/PROJECTS/2017_07_DARPA_SIMULATIONS"
-GUIDESEQ = os.path.join(
-    BASEDIR, "offtargetDetection/casoffinder/offby6/CRISPRessoWGS/guideseq_anno"
-)
-CIRCLESEQ = os.path.join(BASEDIR, "offtargetDetection/circleseq/")
-EDITS = os.path.join(
-    BASEDIR, "wgs/GM12878-Cas9/WGS1000/detectWithOtherTools/manuel_experiments/VCFs"
-)
-# TODO: remove --out
-# REPORTS = os.path.join(
-#     BASEDIR,
-#     "wgs/GM12878-Cas9/WGS1000/detectWithOtherTools/manuel_experiments/reports"
-# )
+BASEDIR = "../data"
+GUIDESEQ = os.path.join(BASEDIR, "offtarget_detection/guideseq")
+CIRCLESEQ = os.path.join(BASEDIR, "offtarget_detection/circleseq/")
+EDITS = os.path.join(BASEDIR, "VCFs")
+REPORTS = os.path.join(BASEDIR, "edits_reports")
 # variant calling tools
 VCALLINGTOOLS = ["mutect2", "strelka", "pindel", "varscan"]
-# guides
+# guides, experiments type and cell types
 GUIDES = ["EMX1", "HEKSite4", "RNF2", "VEGFASite3"]
-# experiments type
 EXPERIMENTS = ["circleseq", "guideseq"]
-# cell types
 CELLTYPES = ["GM12878", "K562"]
 # genomic regions padding size
 PADSIZE = 10000
@@ -100,18 +87,11 @@ GUIDESEQ_COLS = [
 ]
 
 
-def parse_commandline() -> argparse.ArgumentParser:
-    """The function parses the command line input arguments.
+def parse_commandline():
+    """The function parses the command line arguments provided as input
 
-    ...
-
-    Parameters
-    ----------
-    None
-
-    Returns
-    -------
-    argparse.ArgumentParser
+    :return: parsed input arguments
+    :rtype: argparse.Namespace
     """
 
     parser = argparse.ArgumentParser(
@@ -142,108 +122,97 @@ def parse_commandline() -> argparse.ArgumentParser:
         help="Shift the target regions 100bp upstream and downstream (not "
         "overlapping the original target site)",
     )
-    args = parser.parse_args()
-    return args
+    return parser.parse_args()
 
 
-def read_targets(exp_type: str, guide: str) -> pd.DataFrame:
-    """The function parses the target sites file.
+def read_targets(exp_type, guide):
+    """Parse the guide target sites file
 
-    ...
-
-    Parameters
-    ----------
-    exp_type
-        Experiment type
-
+    :param exp_type: experiment type
+    :type exp_type: str
+    :param guide: guide
+    :type guide: str
+    :raises TypeError: raise on exp_type type mismatch
+    :raises ValueError: raise on forbidden exp_type value
+    :raises TypeError: raise on guide type mismatch
+    :raises ValueError: raise on forbidden guide value
+    :return: guide target sites
+    :rtype: pd.DataFrame
     """
 
     if not isinstance(exp_type, str):
-        raise TypeError(f"Expected {str.__name__}, got {type(exp_type).__name__}")
+        raise TypeError("Expected %s, got %s" % (str.__name__, type(exp_type).__name__))
     if exp_type not in EXPERIMENTS:
-        raise ValueError(f"Forbidden experiment type ({exp_type})")
+        raise ValueError("Forbidden experiment type (%s)" % (exp_type))
     if not isinstance(guide, str):
-        raise TypeError(f"Expected {str.__name__}, got {type(guide).__name__}")
+        raise TypeError("Expected %s, got %s" % (str.__name__, type(guide).__name__))
     if not guide in GUIDES:
-        raise ValueError(f"Forbidden guide ({guide})")
+        raise ValueError("Forbidden guide (%s)" % (guide))
     if exp_type == EXPERIMENTS[0]:  # circleseq
         targets = pd.read_csv(
-            os.path.join(CIRCLESEQ, f"{guide}.circleseq.hg19.hg38.targetname"), sep="\t"
+            os.path.join(CIRCLESEQ, "%s.circleseq.hg19.hg38.targetname" % (guide)),
+            sep="\t",
         )
         cols = targets.columns.tolist()  # rename columns for later join
         targets.columns = cols[:-1] + ["SITE"]
     else:  # guideseq
-        targets = pd.read_csv(os.path.join(GUIDESEQ, f"{guide}.guideseq"), sep="\t")
+        targets = pd.read_csv(os.path.join(GUIDESEQ, "%s.guideseq" % (guide)), sep="\t")
         cols = targets.columns.tolist()  # rename columns for later join
         targets.columns = cols[:6] + ["SITE"] + cols[7:]
     assert not targets.empty
     return targets
 
 
-def read_vcf(vcf: str) -> List[List]:
-    """The function parses the input VCF.
+def read_vcf(vcf):
+    """Parse the input VCF
 
-    ...
-
-    Parameters
-    ----------
-    vcf
-        Input VCF
-
-    Returns
-    -------
-    List[List]
+    :param vcf: VCF file
+    :type vcf: str
+    :raises TypeError: raise on vcf type mismatch
+    :raises FileNotFoundError: raise if vcf cannot be found
+    :raises OSError: raise on read() failure
+    :return: VCF lines
+    :rtype: List[List]
     """
-
     if not isinstance(vcf, str):
-        raise TypeError(f"Expected {str.__name__}, got {type(vcf).__name__}")
+        raise TypeError("Expected %s, got %s" % (str.__name__, type(vcf).__name__))
     if not os.path.isfile(vcf):
-        raise FileNotFoundError(f"Unable to locate {vcf}")
+        raise FileNotFoundError("Unable to locate %s" % (vcf))
     try:
-        handle = open(vcf, mode="r")
+        handle = open(vcf, mode="r")  # parse the VCF
         variants = [line.strip().split() for line in handle if not line.startswith("#")]
     except OSError:
-        raise OSError(f"An error occurred while reading {vcf}")
+        raise OSError("An error occurred while reading %s" % (vcf))
     finally:
         handle.close()
     return variants
 
 
-def __recover_depth(
-    edit: List,
-    depth: str,
-    normal: Optional[bool] = True,
-    reference: Optional[bool] = True,
-    pindel: Optional[bool] = False,
-    varscan: Optional[bool] = False,
-) -> int:
+def _recover_depth(edit, depth, normal, reference, pindel, varscan):
     """(PRIVATE)
+    Recover read depth supporting the reference and alternative alleles
 
-    The function recovers the read depth supporting the reference and
-    alternative alleles called.
-
-    ...
-
-    Parameters
-    ----------
-    edit
-        Input edit
-    depth
-        Read depth type <"AD", "DP">
-    normal
-    reference
-    pindel
-    varscan
-
-    Returns
-    -------
-    int
+    :param edit: edit
+    :type edit: List
+    :param depth: edit read depth
+    :type depth: str
+    :param normal: normal sample, defaults to True
+    :type normal: Optional[bool], optional
+    :param reference: reference, defaults to True
+    :type reference: Optional[bool], optional
+    :param pindel: from pindel, defaults to False
+    :type pindel: Optional[bool], optional
+    :param varscan: from varscan, defaults to False
+    :type varscan: Optional[bool], optional
+    :raises TypeError: raise on depth type mismatch
+    :raises ValueError: raise on forbidden depth value
+    :return: edit read depth
+    :rtype: int
     """
-
     if not isinstance(depth, str):
-        raise TypeError(f"Expected {str.__name__}, got {type(depth).__name__}")
+        raise TypeError("Expected %s, got %s" % (str.__name__, type(depth).__name__))
     if depth not in ["AD", "DP"]:
-        raise ValueError(f"Forbidden read depth read ({depth})")
+        raise ValueError("Forbidden read depth read (%s)" % (depth))
     assert len(edit) == 11  # each edit contains exactly 11 fields
     depthidx = edit[8].split(":").index(depth)
     if depth == "DP":  # read depth
@@ -281,32 +250,22 @@ def __recover_depth(
             return int(edit[10].split(":")[depthidx].split(",")[1])
 
 
-def edits_dataframe(
-    edits: List,
-    target_sites: List,
-    strelka: Optional[bool] = False,
-    pindel: Optional[bool] = False,
-    varscan: Optional[bool] = False,
-) -> pd.DataFrame:
-    """The function constructs a dataframe from the parsed edits.
+def edits_dataframe(edits, target_sites, strelka=False, pindel=False, varscan=False):
+    """Construct dataframe from input variants
 
-    ...
-
-    Parameters
-    ----------
-    edits
-        List of parsed edits
-    target_sites
-        List of target sites
-    strelka
-    pindel
-    varscan
-
-    Returns
-    -------
-    pd.DataFrame
+    :param edits: variants list
+    :type edits: List
+    :param target_sites: guide traget sites
+    :type target_sites: List
+    :param strelka: variants called by strelka, defaults to False
+    :type strelka: Optional[bool], optional
+    :param pindel: variants called by pindel, defaults to False
+    :type pindel: Optional[bool], optional
+    :param varscan: variants called by varscan, defaults to False
+    :type varscan: Optional[bool], optional
+    :return: edits dataset stored as dataframe
+    :rtype: pd.DataFrame
     """
-
     assert len(edits) == len(target_sites)
     # edits dictionary
     edf = {
@@ -335,10 +294,10 @@ def edits_dataframe(
                 edf["ALT"].append(e[4])
                 edf["FILTER"].append(e[6])
                 edf["DP-NORMAL"].append(
-                    __recover_depth(e, "DP", normal=True, pindel=pindel)
+                    _recover_depth(e, "DP", normal=True, pindel=pindel)
                 )
                 edf["DP-TUMOR"].append(
-                    __recover_depth(e, "DP", normal=False, pindel=pindel)
+                    _recover_depth(e, "DP", normal=False, pindel=pindel)
                 )
                 if strelka:  # strelka does not report AD
                     edf["AD-NORMAL-REF"].append(0)
@@ -347,22 +306,22 @@ def edits_dataframe(
                     edf["AD-TUMOR-ALT"].append(0)
                 else:
                     edf["AD-NORMAL-REF"].append(
-                        __recover_depth(
+                        _recover_depth(
                             e, "AD", normal=True, reference=True, varscan=varscan
                         )
                     )
                     edf["AD-NORMAL-ALT"].append(
-                        __recover_depth(
+                        _recover_depth(
                             e, "AD", normal=True, reference=False, varscan=varscan
                         )
                     )
                     edf["AD-TUMOR-REF"].append(
-                        __recover_depth(
+                        _recover_depth(
                             e, "AD", normal=False, reference=True, varscan=varscan
                         )
                     )
                     edf["AD-TUMOR-ALT"].append(
-                        __recover_depth(
+                        _recover_depth(
                             e, "AD", normal=False, reference=False, varscan=varscan
                         )
                     )
@@ -372,25 +331,17 @@ def edits_dataframe(
     return edf
 
 
-def __etype(ref: str, alt: str) -> str:
+def _etype(ref, alt):
     """(PRIVATE)
+    Assign variant type
 
-    The function decide wheter the input edit is a deletion, insertion or snv.
-
-    ...
-
-    Parameters
-    ----------
-    ref
-        Reference allele
-    alt
-        Alternative allele
-
-    Returns
-    -------
-    str
+    :param ref: reference allele
+    :type ref: str
+    :param alt: alternative allele
+    :type alt: str
+    :return: edits type
+    :rtype: str
     """
-
     if len(ref) < len(alt):
         return INSERTION
     elif len(alt) < len(ref):
@@ -398,95 +349,74 @@ def __etype(ref: str, alt: str) -> str:
     return SNV
 
 
-def assign_etype(ref: str, alt: str) -> str:
-    """The function assigns a type to the input edit. The available types are
-    insertion, deletion, or snv.
+def assign_etype(ref, alt):
+    """Assign type to inpu edit <insertion, deletion, snv>
 
-    ...
-
-    Parameters
-    ----------
-    ref
-        Reference allele
-    alt
-        Alternative allele
-
-    Returns
-    -------
-    str
+    :param ref: reference allele
+    :type ref: str
+    :param alt: alternative allele
+    :type alt: str
+    :raises TypeError: raise on ref type mismatch
+    :raises TypeError: raise on alt type mismatch
+    :return: edit type
+    :rtype: str
     """
-
     if not isinstance(ref, str):
-        raise TypeError(f"Expected {str.__name__}, got {type(ref).__name__}")
+        raise TypeError("Expected %s, got %s" % (str.__name__, type(ref).__name__))
     if not isinstance(alt, str):
-        raise TypeError(f"Expected {str.__name__}, got {type(alt).__name__}")
+        raise TypeError("Expected %s, got %s" % (str.__name__, type(alt).__name__))
     if "," in alt:  # polyploid alternative allele
-        etypes = []
-        for aa in alt.split(","):
-            etypes.append(__etype(ref, aa))
+        etypes = [_etype(ref, aa) for aa in alt.split(",")]
         return "-".join(list(set(etypes)))
     else:  # regular alternative allele
-        return __etype(ref, alt)
+        return _etype(ref, alt)
 
 
-def compute_distance(epos: int, target_pos: int) -> int:
-    """The function computes the distance between the called edit edit site and
-    their supposed target site.
+def compute_distance(epos, target_pos):
+    """Compute the distance between the edit site and their target site
 
-    ...
-
-    Parameters
-    ----------
-    epos
-        Edit position
-    target_pos
-        Target site coordinate
-
-    Returns
-    -------
-    int
+    :param epos: edit position
+    :type epos: int
+    :param target_pos: target site position
+    :type target_pos: int
+    :raises TypeError: raise on epos type mismatch
+    :raises ValueError: raise on epos forbidden value
+    :raises TypeError: raise on target_pos type mismatch
+    :raises ValueError: raise on target_pos forbidden value
+    :return: distance
+    :rtype: int
     """
-
     if not isinstance(epos, int):
-        raise TypeError(f"Expected {int.__name__}, got {type(epos).__name__}")
+        raise TypeError("Expected %s, got %s" % (int.__name__, type(epos).__name__))
     if epos < 0:
-        raise ValueError(f"Forbidden edit position ({epos})")
+        raise ValueError("Forbidden edit position (%d)" % (epos))
     if not isinstance(target_pos, int):
-        raise TypeError(f"Expected {int.__name__}, got {type(target_pos).__name__}")
+        raise TypeError(
+            "Expected %s, got %s" % (int.__name__, type(target_pos).__name__)
+        )
     if target_pos < 0:
-        raise ValueError(f"Forbidden edit position ({target_pos})")
+        raise ValueError("Forbidden edit position (%d)" % (target_pos))
     return epos - target_pos
 
 
-def edit_location(
-    epos: int, target_start: int, target_stop: int, ref: str, alt: str, etype: str
-) -> str:
-    """The function assesses if the input edit occurred inside or outside the
-    expected target site. If the variant is a deletion or insertion, the edit is
-    flagged as TP if it overlaps the target site positions.
+def edit_location(epos, target_start, target_stop, ref, alt, etype):
+    """Assess if the variant occurred within the target site
 
-    ...
-
-    Parameters
-    ----------
-    epos
-        Edit position
-    target_start
-        Target site start
-    target_stop
-        Target site stop
-    ref
-        Reference allele
-    alt
-        Alternative allele
-    etype
-        Edit type
-
-    Returns
-    -------
-    str
+    :param epos: _description_
+    :type epos: int
+    :param target_start: _description_
+    :type target_start: int
+    :param target_stop: _description_
+    :type target_stop: int
+    :param ref: _description_
+    :type ref: str
+    :param alt: _description_
+    :type alt: str
+    :param etype: _description_
+    :type etype: str
+    :return: _description_
+    :rtype: str
     """
-
     if epos >= target_start and epos <= target_stop:
         return "TP"
     else:
@@ -517,34 +447,29 @@ def edit_location(
     return "FP"
 
 
-def process_edits_dataframe(
-    edits: pd.DataFrame, targets: pd.DataFrame, exp_type: str
-) -> pd.DataFrame:
-    """The function refines the edits report, by assigning to each edit its type,
-    distance from the start/stop coordinates of their target site, and a flag
-    stating if the edit occurred inside or outside the expected target region.
+def process_edits_dataframe(edits, targets, exp_type) -> pd.DataFrame:
+    """Refine edits report. Assign to each edit the type, the distance form
+    start and stop coordinates, and a flag stating if the edit occurs inside or
+    outside the target site
 
-    ...
-
-    Parameters
-    ----------
-    edits
-        Edits dataset
-    targets
-        Target sites
-    exp_type
-        Experiment type <circleseq, guideseq>
-
-    Returns
-    -------
-    pd.DataFrame
+    :param edits: edits dataset
+    :type edits: pd.DataFrame
+    :param targets: targets dataset
+    :type targets: pd.DataFrame
+    :param exp_type: experiment type
+    :type exp_type: str
+    :raises TypeError: raise on edits type mismatch
+    :raises TypeError: raise on targets type mismatch
+    :return: refined edits dataset
+    :rtype: pd.DataFrame
     """
-
     if not isinstance(edits, pd.DataFrame):
-        raise TypeError(f"Expected {pd.DataFrame.__name__}, got {type(edits).__name__}")
+        raise TypeError(
+            "Expected %s, got %s" % (pd.DataFrame.__name__, type(edits).__name__)
+        )
     if not isinstance(targets, pd.DataFrame):
         raise TypeError(
-            f"Expected {pd.DataFrame.__name__}, got {type(targets).__name__}"
+            "Expected %s, got %s" % (pd.DataFrame.__name__, type(targets).__name__)
         )
     if edits.empty:  # empty edits dataframe
         edits = pd.DataFrame(
@@ -576,114 +501,130 @@ def process_edits_dataframe(
     return edits
 
 
-def report_mutect2(
-    exp_type: str, guide: str, cell_type: str, outdir: str, offregion: bool
-) -> None:
-    """The function construct the edits report using the variants called by
-    Mutect2.
+def _recover_variants_mutect2(targets, names_col, edits_dir, offregion, upstream):
+    """(PRIVATE)
+    Recover variants from VCF files returned by Mutect
 
-    ...
-
-    Parameters
-    ----------
-    exp_type
-        Experiment type
-    guide
-        Input guide
-    cell_type
-        Cell type
-    outdir
-        Output directory
-    offregion
-
-    Returns
-    -------
-    None
+    :param targets: guide target sites dataset
+    :type targets: pd.DataFrame
+    :param names_col: names column index
+    :type names_col: int
+    :param edits_dir: edits data directory
+    :type edits_dir: str
+    :param offregion: off regions
+    :type offregion: bool
+    :param upstream: off regions upstream
+    :type upstream: bool
+    :return: variants
+    :rtype: List
     """
+    file_suffix = "vcf.filtered.vcf"
+    if offregion:  # offergion
+        if upstream:  # upstream offregions
+            fnames = [
+                "%s.%s:%d-%d.%s"
+                % (
+                    x[names_col],
+                    x[0],
+                    int(x[1]) - 100 - PADSIZE,
+                    int(x[1]) - 100,
+                    file_suffix,
+                )
+                for _, x in targets.iterrows()
+            ]
+        else:  # downstream offregions
+            fnames = [
+                "%s.%s:%d-%d.%s"
+                % (
+                    x[names_col],
+                    x[0],
+                    int(x[2]) + 100,
+                    int(x[2]) + 100 + PADSIZE,
+                    file_suffix,
+                )
+                for _, x in targets.iterrows()
+            ]
+    else:  # onregions
+        assert not upstream
+        fnames = [
+            "%s.%s:%d-%d.%s"
+            % (
+                x[names_col],
+                x[0],
+                int(x[1]) - PADSIZE,
+                int(x[2]) + PADSIZE,
+                file_suffix,
+            )
+            for _, x in targets.iterrows()
+        ]
+    return [read_vcf(os.path.join(edits_dir, fname)) for fname in fnames]
 
+
+def report_mutect2(exp_type, guide, cell_type, outdir, offregion):
+    """Construct the edits report from Mutect2 results
+
+    :param exp_type: experiment type
+    :type exp_type: str
+    :param guide: guide
+    :type guide: str
+    :param cell_type: cell type
+    :type cell_type: str
+    :param outdir: output directory
+    :type outdir: str
+    :param offregion: off region report
+    :type offregion: bool
+    :raises TypeError: raise on exp_type type mismatch
+    :raises ValueError: raise on forbidden exp_type value
+    :raises TypeError: raise on guide type mismatch
+    :raises ValueError: raise on forbidden guide value
+    :raises TypeError: raise on cell_type type mismatch
+    :raises ValueError: raise on forbidden cell_type value
+    """
     if not isinstance(exp_type, str):
-        raise TypeError(f"Expected {str.__name__}, got {type(exp_type).__name__}")
+        raise TypeError("Expected %s, got %s" % (str.__name__, type(exp_type).__name__))
     if exp_type not in EXPERIMENTS:
-        raise ValueError(f"Forbidden experiment type ({exp_type})")
+        raise ValueError("Forbidden experiment type (%s)" % (exp_type))
     if not isinstance(guide, str):
-        raise TypeError(f"Expected {str.__name__}, got {type(guide).__name__}")
+        raise TypeError("Expected %s, got %s" % (str.__name__, type(guide).__name__))
     if not guide in GUIDES:
-        raise ValueError(f"Forbidden guide ({guide})")
+        raise ValueError("Forbidden guide (%s)" % (guide))
     if not isinstance(cell_type, str):
-        raise TypeError(f"Expected {str.__name__}, got {type(cell_type).__name__}")
+        raise TypeError(
+            "Expected %s, got %s" % (str.__name__, type(cell_type).__name__)
+        )
     if cell_type not in CELLTYPES:
-        raise ValueError(f"Forbidden cell type ({cell_type})")
+        raise ValueError("Forbidden cell type (%s)" % (cell_type))
     # read target sites
     targets = read_targets(exp_type, guide)
     # parse VCFs
     region = "offregion" if offregion else "onregion"
     edits_dir = os.path.join(
         EDITS, VCALLINGTOOLS[0], exp_type, cell_type, region, guide
-    )
+    )  # edits data
     if exp_type == EXPERIMENTS[0]:  # circleseq
         if offregion:
             # parse edits upstream (offregion)
-            edits_upstream = targets.apply(
-                lambda x: read_vcf(
-                    os.path.join(
-                        edits_dir,
-                        f"{x[-1]}.{x[0]}:{int(x[1]) - 100 - PADSIZE}-{int(x[1]) - 100}.vcf.filtered.vcf",
-                    )
-                ),
-                axis=1,
+            edits_upstream = _recover_variants_mutect2(
+                targets, -1, edits_dir, offregion, True
             )
             # parse edits downstream (offregion)
-            edits_downstream = targets.apply(
-                lambda x: read_vcf(
-                    os.path.join(
-                        edits_dir,
-                        f"{x[-1]}.{x[0]}:{int(x[2]) + 100}-{int(x[2]) + 100 + PADSIZE}.vcf.filtered.vcf",
-                    )
-                ),
-                axis=1,
+            edits_downstream = _recover_variants_mutect2(
+                targets, -1, edits_dir, offregion, False
             )
         else:
-            edits = targets.apply(
-                lambda x: read_vcf(
-                    os.path.join(
-                        edits_dir,
-                        f"{x[-1]}.{x[0]}:{int(x[1]) - PADSIZE}-{int(x[2]) + PADSIZE}.vcf.filtered.vcf",
-                    )
-                ),
-                axis=1,
-            )
+            edits = _recover_variants_mutect2(targets, -1, edits_dir, offregion, False)
     else:  # guideseq
         if offregion:
             # parse edits upstream (offregion)
-            edits_upstream = targets.apply(
-                lambda x: read_vcf(
-                    os.path.join(
-                        edits_dir,
-                        f"{x[6]}.{x[0]}:{int(x[1]) - 100 - PADSIZE}-{int(x[1]) - 100}.vcf.filtered.vcf",
-                    )
-                ),
-                axis=1,
+            edits_upstream = _recover_variants_mutect2(
+                targets, 6, edits_dir, offregion, True
             )
             # parse edits downstream (offregion)
-            edits_downstream = targets.apply(
-                lambda x: read_vcf(
-                    os.path.join(
-                        edits_dir,
-                        f"{x[6]}.{x[0]}:{int(x[2]) + 100}-{int(x[2]) + 100 + PADSIZE}.vcf.filtered.vcf",
-                    )
-                ),
-                axis=1,
+            edits_downstream = _recover_variants_mutect2(
+                targets, 6, edits_dir, offregion, False
             )
         else:
-            edits = targets.apply(
-                lambda x: read_vcf(
-                    os.path.join(
-                        edits_dir,
-                        f"{x[6]}.{x[0]}:{int(x[1]) - PADSIZE}-{int(x[2]) + PADSIZE}.vcf.filtered.vcf",
-                    )
-                ),
-                axis=1,
-            )
+            edits = _recover_variants_mutect2(targets, 6, edits_dir, offregion, False)
     # build the edits dataframe
     if offregion:
         edits = pd.concat(
@@ -702,43 +643,78 @@ def report_mutect2(
     edits.to_csv(outfile, sep="\t", index=False)
 
 
-def report_strelka(
-    exp_type: str, guide: str, cell_type: str, outdir: str, offregion: bool
-) -> None:
-    """The function construct the edits report using the variants called by
-    Strelka.
+def recover_variants(targets, edits_dir, file_suffix, offregion, upstream):
+    """Recover variants from VCF files returned by Strelka, Pindel and Varscan
 
-    ...
-
-    Parameters
-    ----------
-    exp_type
-        Experiment type
-    guide
-        Input guide
-    cell_type
-        Cell type
-    outdir
-        Output directory
-    offregion
-
-    Returns
-    -------
-    None
+    :param targets: guide target sites dataset
+    :type targets: pd.DataFrame
+    :param edits_dir: edits data directory
+    :type edits_dir: str
+    :param file_suffix: VCF file suffix
+    :type file_suffix: str
+    :param offregion: off regions
+    :type offregion: bool
+    :param upstream: off regions upstream
+    :type upstream: bool
+    :return: variants
+    :rtype: List
     """
+    if offregion:  # offregions
+        if upstream:  # upstream offregions
+            fnames = [
+                "%s_%d_%d%s"
+                % (x[0], int(x[1]) - 100 - PADSIZE, int(x[1]) - 100, file_suffix)
+                for _, x in targets.iterrows()
+            ]
+        else:  # dowstream offregios
+            fnames = [
+                "%s_%d_%d%s"
+                % (x[0], int(x[2]) + 100, int(x[2]) + 100 + PADSIZE, file_suffix)
+                for _, x in targets.iterrows()
+            ]
+    else:  # onregions
+        assert not upstream
+        fnames = [
+            "%s_%d_%d%s" % (x[0], int(x[1]) - PADSIZE, int(x[2]) + PADSIZE, file_suffix)
+            for _, x in targets.iterrows()
+        ]
+    return [read_vcf(os.path.join(edits_dir, fname)) for fname in fnames]
 
+
+def report_strelka(exp_type, guide, cell_type, outdir, offregion):
+    """Construct the edits report from Strelka results
+
+    :param exp_type: experiment type
+    :type exp_type: str
+    :param guide: guide
+    :type guide: str
+    :param cell_type: cell type
+    :type cell_type: str
+    :param outdir: output directory
+    :type outdir: str
+    :param offregion: off region report
+    :type offregion: bool
+    :raises TypeError: raise on exp_type type mismatch
+    :raises ValueError: raise on forbidden exp_type value
+    :raises TypeError: raise on guide type mismatch
+    :raises ValueError: raise on forbidden guide value
+    :raises TypeError: raise on cell_type type mismatch
+    :raises ValueError: raise on forbidden cell_type value
+    """
     if not isinstance(exp_type, str):
-        raise TypeError(f"Expected {str.__name__}, got {type(exp_type).__name__}")
+        raise TypeError("Expected %s, got %s" % (str.__name__, type(exp_type).__name__))
     if exp_type not in EXPERIMENTS:
-        raise ValueError(f"Forbidden experiment type ({exp_type})")
+        raise ValueError("Forbidden experiment type (%s)" % (exp_type))
     if not isinstance(guide, str):
-        raise TypeError(f"Expected {str.__name__}, got {type(guide).__name__}")
+        raise TypeError("Expected %s, got %s" % (str.__name__, type(guide).__name__))
     if not guide in GUIDES:
-        raise ValueError(f"Forbidden guide ({guide})")
+        raise ValueError("Forbidden guide (%s)" % (guide))
     if not isinstance(cell_type, str):
-        raise TypeError(f"Expected {str.__name__}, got {type(cell_type).__name__}")
+        raise TypeError(
+            "Expected %s, got %s" % (str.__name__, type(cell_type).__name__)
+        )
     if cell_type not in CELLTYPES:
-        raise ValueError(f"Forbidden cell type ({cell_type})")
+        raise ValueError("Forbidden cell type (%s)" % (cell_type))
     # read the target sites
     targets = read_targets(exp_type, guide)
     # parse VCFs
@@ -747,60 +723,26 @@ def report_strelka(
         EDITS, VCALLINGTOOLS[1], exp_type, cell_type, region, guide
     )
     if offregion:
-        edits_upstream_snvs = targets.apply(
-            lambda x: read_vcf(
-                os.path.join(
-                    edits_dir,
-                    f"{x[0]}_{int(x[1]) - 100 - PADSIZE}_{int(x[1]) - 100}_somatic.snvs.vcf",
-                )
-            ),
-            axis=1,
+        # recover upstream variants
+        edits_upstream_snvs = recover_variants(
+            targets, edits_dir, "_somatic.snvs.vcf", offregion, True
         )
-        edits_upstream_indels = targets.apply(
-            lambda x: read_vcf(
-                os.path.join(
-                    edits_dir,
-                    f"{x[0]}_{int(x[1]) - 100 - PADSIZE}_{int(x[1]) - 100}_somatic.indels.vcf",
-                )
-            ),
-            axis=1,
+        edits_upstream_indels = recover_variants(
+            targets, edits_dir, "_somatic.indels.vcf", offregion, True
         )
-        edits_downstream_snvs = targets.apply(
-            lambda x: read_vcf(
-                os.path.join(
-                    edits_dir,
-                    f"{x[0]}_{int(x[2]) + 100}_{int(x[2]) + 100 + PADSIZE}_somatic.snvs.vcf",
-                )
-            ),
-            axis=1,
+        # recover downstream variants
+        edits_downstream_snvs = recover_variants(
+            targets, edits_dir, "_somatic.snvs.vcf", offregion, False
         )
-        edits_downstream_indels = targets.apply(
-            lambda x: read_vcf(
-                os.path.join(
-                    edits_dir,
-                    f"{x[0]}_{int(x[2]) + 100}_{int(x[2]) + 100 + PADSIZE}_somatic.indels.vcf",
-                )
-            ),
-            axis=1,
+        edits_downstream_indels = recover_variants(
+            targets, edits_dir, "_somatic.indels.vcf", offregion, False
         )
-    else:
-        edits_snvs = targets.apply(
-            lambda x: read_vcf(
-                os.path.join(
-                    edits_dir,
-                    f"{x[0]}_{int(x[1]) - PADSIZE}_{int(x[2]) + PADSIZE}_somatic.snvs.vcf",
-                )
-            ),
-            axis=1,
+    else:  # onregions
+        edits_snvs = recover_variants(
+            targets, edits_dir, "_somatic.snvs.vcf", offregion, False
         )
-        edits_indels = targets.apply(
-            lambda x: read_vcf(
-                os.path.join(
-                    edits_dir,
-                    f"{x[0]}_{int(x[1]) - PADSIZE}_{int(x[2]) + PADSIZE}_somatic.indels.vcf",
-                )
-            ),
-            axis=1,
+        edits_indels = recover_variants(
+            targets, edits_dir, "_somatic.indels.vcf", offregion, False
         )
     # build the edits dataframe
     if offregion:
@@ -844,43 +786,40 @@ def report_strelka(
     edits.to_csv(outfile, sep="\t", index=False)
 
 
-def report_pindel(
-    exp_type: str, guide: str, cell_type: str, outdir: str, offregion: bool
-) -> None:
-    """The function constructs the edits report using the variants called by
-    Pindel.
+def report_pindel(exp_type, guide, cell_type, outdir, offregion):
+    """Construct the edits report from Pindel results
 
-    ...
-
-    Parameters
-    ----------
-    exp_type
-        Experiment type
-    guide
-        Input guide
-    cell_type
-        Cell type
-    outdir
-        Output directory
-    offregion
-
-    Returns
-    -------
-    None
+    :param exp_type: experiment type
+    :type exp_type: str
+    :param guide: guide
+    :type guide: str
+    :param cell_type: cell type
+    :type cell_type: str
+    :param outdir: output directory
+    :type outdir: str
+    :param offregion: off region report
+    :type offregion: bool
+    :raises TypeError: raise on exp_type type mismatch
+    :raises ValueError: raise on forbidden exp_type value
+    :raises TypeError: raise on guide type mismatch
+    :raises ValueError: raise on forbidden guide value
+    :raises TypeError: raise on cell_type type mismatch
+    :raises ValueError: raise on forbidden cell_type value
     """
-
     if not isinstance(exp_type, str):
-        raise TypeError(f"Expected {str.__name__}, got {type(exp_type).__name__}")
+        raise TypeError("Expected %s, got %s" % (str.__name__, type(exp_type).__name__))
     if exp_type not in EXPERIMENTS:
-        raise ValueError(f"Forbidden experiment type ({exp_type})")
+        raise ValueError("Forbidden experiment type (%s)" % (exp_type))
     if not isinstance(guide, str):
-        raise TypeError(f"Expected {str.__name__}, got {type(guide).__name__}")
+        raise TypeError("Expected %s, got %s" % (str.__name__, type(guide).__name__))
     if not guide in GUIDES:
-        raise ValueError(f"Forbidden guide ({guide})")
+        raise ValueError("Forbidden guide (%s)" % (guide))
     if not isinstance(cell_type, str):
-        raise TypeError(f"Expected {str.__name__}, got {type(cell_type).__name__}")
+        raise TypeError(
+            "Expected %s, got %s" % (str.__name__, type(cell_type).__name__)
+        )
     if cell_type not in CELLTYPES:
-        raise ValueError(f"Forbidden cell type ({cell_type})")
+        raise ValueError("Forbidden cell type (%s)" % (cell_type))
     # read target sites
     targets = read_targets(exp_type, guide)
     # parse VCFs
@@ -889,60 +828,26 @@ def report_pindel(
         EDITS, VCALLINGTOOLS[2], exp_type, cell_type, region, guide
     )
     if offregion:
-        edits_upstream_deletions = targets.apply(
-            lambda x: read_vcf(
-                os.path.join(
-                    edits_dir,
-                    f"{x[0]}_{int(x[1]) - 100 - PADSIZE}_{int(x[1]) - 100}_D.vcf",
-                )
-            ),
-            axis=1,
+        # recover upstream indels
+        edits_upstream_deletions = recover_variants(
+            targets, edits_dir, "_D.vcf", offregion, True
         )
-        edits_upstream_insertions = targets.apply(
-            lambda x: read_vcf(
-                os.path.join(
-                    edits_dir,
-                    f"{x[0]}_{int(x[1]) - 100 - PADSIZE}_{int(x[1]) - 100}_SI.vcf",
-                )
-            ),
-            axis=1,
+        edits_upstream_insertions = recover_variants(
+            targets, edits_dir, "_SI.vcf", offregion, True
         )
-        edits_downstream_deletions = targets.apply(
-            lambda x: read_vcf(
-                os.path.join(
-                    edits_dir,
-                    f"{x[0]}_{int(x[2]) + 100}_{int(x[2]) + 100 + PADSIZE}_D.vcf",
-                )
-            ),
-            axis=1,
+        # recover downstream indels
+        edits_downstream_deletions = recover_variants(
+            targets, edits_dir, "_D.vcf", offregion, False
         )
-        edits_downstream_insertions = targets.apply(
-            lambda x: read_vcf(
-                os.path.join(
-                    edits_dir,
-                    f"{x[0]}_{int(x[2]) + 100}_{int(x[2]) + 100 + PADSIZE}_SI.vcf",
-                )
-            ),
-            axis=1,
+        edits_downstream_insertions = recover_variants(
+            targets, edits_dir, "_SI.vcf", offregion, False
         )
-    else:
-        edits_deletions = targets.apply(
-            lambda x: read_vcf(
-                os.path.join(
-                    edits_dir,
-                    f"{x[0]}_{int(x[1]) - PADSIZE}_{int(x[2]) + PADSIZE}_D.vcf",
-                )
-            ),
-            axis=1,
+    else:  # offregions
+        edits_deletions = recover_variants(
+            targets, edits_dir, "_D.vcf", offregion, False
         )
-        edits_insertions = targets.apply(
-            lambda x: read_vcf(
-                os.path.join(
-                    edits_dir,
-                    f"{x[0]}_{int(x[1]) - PADSIZE}_{int(x[2]) + PADSIZE}_SI.vcf",
-                )
-            ),
-            axis=1,
+        edits_insertions = recover_variants(
+            targets, edits_dir, "_SI.vcf", offregion, False
         )
     if offregion:
         edits = pd.concat(
@@ -990,43 +895,40 @@ def report_pindel(
     edits.to_csv(outfile, sep="\t", index=False)
 
 
-def report_varscan(
-    exp_type: str, guide: str, cell_type: str, outdir: str, offregion: bool
-) -> None:
-    """The function construct the edits report using the variants called by
-    Varscan.
+def report_varscan(exp_type, guide, cell_type, outdir, offregion):
+    """Construct the edits report from Varscan results
 
-    ...
-
-    Parameters
-    ----------
-    exp_type
-        Experiment type
-    guide
-        Input guide
-    cell_type
-        Cell type
-    outdir
-        Output directory
-    offregion
-
-    Returns
-    -------
-    None
+    :param exp_type: experiment type
+    :type exp_type: str
+    :param guide: guide
+    :type guide: str
+    :param cell_type: cell type
+    :type cell_type: str
+    :param outdir: output directory
+    :type outdir: str
+    :param offregion: off region report
+    :type offregion: bool
+    :raises TypeError: raise on exp_type type mismatch
+    :raises ValueError: raise on forbidden exp_type value
+    :raises TypeError: raise on guide type mismatch
+    :raises ValueError: raise on forbidden guide value
+    :raises TypeError: raise on cell_type type mismatch
+    :raises ValueError: raise on forbidden cell_type value
     """
-
     if not isinstance(exp_type, str):
-        raise TypeError(f"Expected {str.__name__}, got {type(exp_type).__name__}")
+        raise TypeError("Expected %s, got %s" % (str.__name__, type(exp_type).__name__))
     if exp_type not in EXPERIMENTS:
-        raise ValueError(f"Forbidden experiment type ({exp_type})")
+        raise ValueError("Forbidden experiment type (%s)" % (exp_type))
     if not isinstance(guide, str):
-        raise TypeError(f"Expected {str.__name__}, got {type(guide).__name__}")
+        raise TypeError("Expected %s, got %s" % (str.__name__, type(guide).__name__))
     if not guide in GUIDES:
-        raise ValueError(f"Forbidden guide ({guide})")
+        raise ValueError("Forbidden guide (%s)" % (guide))
     if not isinstance(cell_type, str):
-        raise TypeError(f"Expected {str.__name__}, got {type(cell_type).__name__}")
+        raise TypeError(
+            "Expected %s, got %s" % (str.__name__, type(cell_type).__name__)
+        )
     if cell_type not in CELLTYPES:
-        raise ValueError(f"Forbidden cell type ({cell_type})")
+        raise ValueError("Forbidden cell type (%s)" % (cell_type))
     # read the target sites
     targets = read_targets(exp_type, guide)
     # parse VCFs
@@ -1034,61 +936,25 @@ def report_varscan(
     edits_dir = os.path.join(
         EDITS, VCALLINGTOOLS[3], exp_type, cell_type, region, guide
     )
-    if offregion:
-        edits_upstream_snvs = targets.apply(
-            lambda x: read_vcf(
-                os.path.join(
-                    edits_dir,
-                    f"{x[0]}_{int(x[1]) - 100 - PADSIZE}_{int(x[1]) - 100}.snp.vcf",
-                )
-            ),
-            axis=1,
+    if offregion:  # offergions
+        # upstream variants
+        edits_upstream_snvs = recover_variants(
+            targets, edits_dir, ".snp.vcf", offregion, True
         )
-        edits_upstream_indels = targets.apply(
-            lambda x: read_vcf(
-                os.path.join(
-                    edits_dir,
-                    f"{x[0]}_{int(x[1]) - 100 - PADSIZE}_{int(x[1]) - 100}.indel.vcf",
-                )
-            ),
-            axis=1,
+        edits_upstream_indels = recover_variants(
+            targets, edits_dir, ".indel.vcf", offregion, True
         )
-        edits_downstream_snvs = targets.apply(
-            lambda x: read_vcf(
-                os.path.join(
-                    edits_dir,
-                    f"{x[0]}_{int(x[2]) + 100}_{int(x[2]) + 100 + PADSIZE}.snp.vcf",
-                )
-            ),
-            axis=1,
+        # downstream variants
+        edits_downstream_snvs = recover_variants(
+            targets, edits_dir, ".snp.vcf", offregion, False
         )
-        edits_downstream_indels = targets.apply(
-            lambda x: read_vcf(
-                os.path.join(
-                    edits_dir,
-                    f"{x[0]}_{int(x[2]) + 100}_{int(x[2]) + 100 + PADSIZE}.indel.vcf",
-                )
-            ),
-            axis=1,
+        edits_downstream_indels = recover_variants(
+            targets, edits_dir, ".indel.vcf", offregion, False
         )
-    else:
-        edits_snvs = targets.apply(
-            lambda x: read_vcf(
-                os.path.join(
-                    edits_dir,
-                    f"{x[0]}_{int(x[1]) - PADSIZE}_{int(x[2]) + PADSIZE}.snp.vcf",
-                )
-            ),
-            axis=1,
-        )
-        edits_indels = targets.apply(
-            lambda x: read_vcf(
-                os.path.join(
-                    edits_dir,
-                    f"{x[0]}_{int(x[1]) - PADSIZE}_{int(x[2]) + PADSIZE}.indel.vcf",
-                )
-            ),
-            axis=1,
+    else:  # onregions
+        edits_snvs = recover_variants(targets, edits_dir, ".snp.vcf", offregion, False)
+        edits_indels = recover_variants(
+            targets, edits_dir, ".indel.vcf", offregion, False
         )
     # build the edits dataframe
     if offregion:

@@ -27,9 +27,9 @@ def parse_commandline():
         formatter_class=argparse.RawTextHelpFormatter,
         description="Script to call variants in the specified input regions",
         usage="\n\tpython %(prog)s --targets <TARGETS-FILE> --genome <GENOME> "
-              "--bam1 <BAM> --bam2 <BAM> --normal <NORMAL-SAMPLE> --chrom-col "
-              "<CHR-COL-NUM> --start-col <START-COL-NUM> --stop-col <STOP-COL-NUM> " 
-              "--name-col <NAME-COL-NUM> --offregion --out <OUTDIR> --threads <THREADS>",
+        "--bam1 <BAM> --bam2 <BAM> --normal <NORMAL-SAMPLE> --chrom-col "
+        "<CHR-COL-NUM> --start-col <START-COL-NUM> --stop-col <STOP-COL-NUM> "
+        "--name-col <NAME-COL-NUM> --offregion --out <OUTDIR> --threads <THREADS>",
     )
     parser.add_argument(
         "--targets", type=str, metavar="TARGETS-FILE", help="Targets coordinates file"
@@ -90,7 +90,7 @@ def parse_commandline():
 
 
 def _check_args(args):
-    """ (PRIVATE)
+    """(PRIVATE)
     Check input arguments consistency
 
     :param args: input arguments
@@ -98,40 +98,58 @@ def _check_args(args):
     """
     if not isinstance(args, argparse.Namespace):
         raise TypeError(
-            "Expected %s, got %s" % (argparse.ArgumentParser.__name__, type(args).__name__)
+            "Expected %s, got %s"
+            % (argparse.ArgumentParser.__name__, type(args).__name__)
         )
     if not isinstance(args.targets, str):
-        raise TypeError("Expected %s, got %s" % (str.__name__, type(args.targets).__name__))
+        raise TypeError(
+            "Expected %s, got %s" % (str.__name__, type(args.targets).__name__)
+        )
     if not os.path.isfile(args.targets):
         raise FileNotFoundError("Unable to locate %s" % (args.targets))
     if not isinstance(args.genome, str):
-        raise TypeError("Expected %s, got %s" % (str.__name__, type(args.genome).__name__))
+        raise TypeError(
+            "Expected %s, got %s" % (str.__name__, type(args.genome).__name__)
+        )
     if not os.path.isfile(args.genome):
         raise FileNotFoundError("Unable to locate %s" % (args.genome))
     if not isinstance(args.bam1, str):
-        raise TypeError("Expected %s, got %s" % (str.__name__, type(args.bam1).__name__))
+        raise TypeError(
+            "Expected %s, got %s" % (str.__name__, type(args.bam1).__name__)
+        )
     if not os.path.isfile(args.bam1):
         raise FileNotFoundError("Unable to locate %s" % (args.bam1))
     if not isinstance(args.bam2, str):
-        raise TypeError("Expected %s, got %s" % (str.__name__, type(args.bam2).__name__))
+        raise TypeError(
+            "Expected %s, got %s" % (str.__name__, type(args.bam2).__name__)
+        )
     if not os.path.isfile(args.bam2):
         raise FileNotFoundError("Unable to locate %s" % (args.bam2))
     if not isinstance(args.chrom_col, int):
-        raise TypeError("Expected %s, got %s" % (int.__name__, type(args.chrom_col).__name__))
+        raise TypeError(
+            "Expected %s, got %s" % (int.__name__, type(args.chrom_col).__name__)
+        )
     if args.chrom_col < 0:
         raise ValueError("Wrong chromosome column number (%d)" % (args.chrom_col))
     if not isinstance(args.start_col, int):
-        raise TypeError("Expected %s, got %s" % (int.__name__, type(args.start_col).__name__))
+        raise TypeError(
+            "Expected %s, got %s" % (int.__name__, type(args.start_col).__name__)
+        )
     if args.start_col < 0:
         raise ValueError("Wrong start column number (%d)" % (args.start_col))
     if not isinstance(args.stop_col, int):
-        raise TypeError("Expected %s, got %s" % (int.__name__, type(args.stop_col).__name__))
+        raise TypeError(
+            "Expected %s, got %s" % (int.__name__, type(args.stop_col).__name__)
+        )
     if args.stop_col < 0:
         raise ValueError("Wrong stop column number (%d)" % (args.stop_col))
     if not isinstance(args.name_col, int):
-        raise TypeError("Expected %s, got %s" % (int.__name__, type(args.name_col).__name__))
+        raise TypeError(
+            "Expected %s, got %s" % (int.__name__, type(args.name_col).__name__)
+        )
     if args.name_col < 0:
         raise ValueError("Wrong name column number (%d)" % (args.name_col))
+
 
 def compute_coordinates(chrom, start, stop):
     """Computes genomic coordinates string
@@ -161,8 +179,9 @@ def compute_coordinates(chrom, start, stop):
         )
     return "%s:%d-%d" % (chrom, start, stop)
 
+
 def parse_targets_coordinates(targets_file, chrom_col, start_col, stop_col, offregion):
-    """Reda the input guide targets regions and pad them by 10kb upstream and 
+    """Reda the input guide targets regions and pad them by 10kb upstream and
     downstream
 
     :param targets_file: guide target regions file
@@ -184,7 +203,9 @@ def parse_targets_coordinates(targets_file, chrom_col, start_col, stop_col, offr
     :rtype: pd.DataFrame
     """
     if not isinstance(targets_file, str):
-        raise TypeError("Expected %s, got %s" % (str.__name__, type(targets_file).__name__))
+        raise TypeError(
+            "Expected %s, got %s" % (str.__name__, type(targets_file).__name__)
+        )
     if not os.path.isfile(targets_file):
         raise FileNotFoundError("Unable to locate %s" % (targets_file))
     targets = pd.read_csv(targets_file, sep="\t")  # load the target TSV file
@@ -200,13 +221,15 @@ def parse_targets_coordinates(targets_file, chrom_col, start_col, stop_col, offr
         start_col = columns[start_col]
     except IndexError:
         raise IndexError(
-            "The start coordinate column number %d is not in %s" % (start_col, targets_file)
+            "The start coordinate column number %d is not in %s"
+            % (start_col, targets_file)
         )
     try:
         stop_col = columns[stop_col]
     except IndexError:
         raise IndexError(
-            "The stop coordinate column number %d is not in %s" % (stop_col, targets_file)
+            "The stop coordinate column number %d is not in %s"
+            % (stop_col, targets_file)
         )
     if offregion:  # off target regions
         targets1 = targets.copy()  # upstream shift
@@ -242,6 +265,7 @@ def run_command(command):
     """
     return subprocess.call(command, shell=True)
 
+
 def run_commands(commands, threads):
     """Run the input commands
 
@@ -275,8 +299,15 @@ def main():
     coords = targets[COORDSCOL].tolist()
     names = targets[args.name_col].tolist()
     commands = [  # force stdout to /dev/null
-        "%s -R %s -I %s -I %s -normal %s -L %s -O %s > /dev/null" % (
-            MUTECT2, args.genome, args.bam1, args.bam2, args.normal, coord, os.path.join(args.out, "%s.%s.vcf" % (names[i], coord))
+        "%s -R %s -I %s -I %s -normal %s -L %s -O %s > /dev/null"
+        % (
+            MUTECT2,
+            args.genome,
+            args.bam1,
+            args.bam2,
+            args.normal,
+            coord,
+            os.path.join(args.out, "%s.%s.vcf" % (names[i], coord)),
         )
         for i, coord in enumerate(coords)
     ]
@@ -284,7 +315,7 @@ def main():
     # filter variants called
     vcfs = glob(os.path.join(args.out, "*.vcf"))
     commands = [
-        "%s -V %s -R %s -O %s" % (FILTER, vcf, args.genome,  "%s.filtered.vcf" % (vcf))
+        "%s -V %s -R %s -O %s" % (FILTER, vcf, args.genome, "%s.filtered.vcf" % (vcf))
         for vcf in vcfs
     ]
     run_commands(commands, args.threads)

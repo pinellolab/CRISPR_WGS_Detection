@@ -41,7 +41,7 @@ def parse_commandline():
         formatter_class=argparse.RawTextHelpFormatter,
         description="Run variant calling tools to detect CRISPR-Cas9 edits",
         usage="\n\tpython %(prog)s --tool <TOOL-NAME> --type <TYPE> --threads "
-              "<THREADS>",
+        "<THREADS>",
     )
     parser.add_argument(
         "--tool",
