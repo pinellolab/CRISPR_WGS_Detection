@@ -1,13 +1,13 @@
+"""Run GATK Mutect2 on the set of off-target regions identified by CasOffinder. 
+The regions are specified in the input file.
 """
-"""
+
 from command_runners import run_commands
 from targets_file_parser import parse_targets_coordinates
 
 from glob import glob
-from tqdm import tqdm
 
 import argparse
-import sys
 import os
 
 MUTECT2 = "gatk Mutect2"  # Mutect2

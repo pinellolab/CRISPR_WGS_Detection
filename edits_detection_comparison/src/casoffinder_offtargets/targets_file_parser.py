@@ -1,3 +1,8 @@
+"""Target files parsers. The parsers recover the offtarget regions identified
+by CasOffinder and add 10bp upstream and downstream to each region. The padded 
+regions are stored in the format `chr`:`start`-`stop`.
+"""
+
 def read_targets_file(targets_file):
     try:
         with open(targets_file, mode="r") as infile:
@@ -20,4 +25,3 @@ def compute_coordinates(targets):
 def parse_targets_coordinates(targets_file):
     lines = read_targets_file(targets_file)  # read targets file
     return compute_coordinates(lines)  # compute target regions
-

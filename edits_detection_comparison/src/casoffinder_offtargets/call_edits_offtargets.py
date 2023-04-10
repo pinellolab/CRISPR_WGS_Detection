@@ -19,6 +19,7 @@ import os
 MUTECTPY = "run_mutect.py"
 STRELKAPY = "run_strelka.py"
 STRELKARUNDIR = tempfile.mkdtemp()
+VARSCANPY = "run_varscan.py"
 
 def parse_commandline():
     """Parse the command line arguments provided as input
@@ -74,7 +75,7 @@ def run_commands(commands, tool):
     for cmd in commands:
         code = subprocess.call(cmd, shell=True)
         if code != 0:
-            raise OSError("An error ocuurred while running %s" % (tool))
+            raise OSError("An error ocuurred while running %s\n(%s)" % (tool, cmd))
 
 def runinfo(args):
     """(PRIVATE)
@@ -139,6 +140,31 @@ def run_strelka():
             )
     run_commands(commands, VCALLINGTOOLS[1])
 
+def run_varscan():
+    """Run Varscan to call edits on the input regions
+    """
+    commands = []
+    for guide in GUIDES:
+        outdir = os.path.join(OUTDIR, VCALLINGTOOLS[3])
+        targets = os.path.join(OFFTARGETS, "casoffinder.%s.txt.out" % (guide.replace("Site4", "4").replace("Site3", "3")))
+        for cell_type in CELLTYPES:
+            cmd = (
+                "python %s --targets %s --genome %s --normal-bam %s --tumor-bam "
+                "%s --out %s"
+            )
+            if cell_type == CELLTYPES[0]:  # GM12878
+                tumor_bam = os.path.join(BAMS, "%s.cram" % (guide)) if guide == GUIDES[0] else os.path.join(BAMS, "%s.bam" % (guide))
+                normal_bam = os.path.join(BAMS, "DNMT1Site3.bam")
+            else:  # K562
+                tumor_bam = os.path.join(BAMS, "%s_%s.cram" % (cell_type, guide))
+                normal_bam = os.path.join(BAMS, "K562_DNMT1Site3.cram")
+            odir = os.path.join(outdir, cell_type, guide)
+            commands.append(
+                cmd % (VARSCANPY, targets, GENOME, normal_bam, tumor_bam, odir)
+            )
+    run_commands(commands, VCALLINGTOOLS[3])
+
+
 def main():
     args = parse_commandline()
     runinfo(args)  # print run info to stderr
@@ -148,6 +174,9 @@ def main():
     elif args.tool == VCALLINGTOOLS[1]:  # strelka
         create_result_dirtree(args.tool)
         run_strelka()
+    elif args.tool == VCALLINGTOOLS[3]:  # varscan
+        create_result_dirtree(args.tool)
+        run_varscan()
 
 if __name__ == "__main__":
     main()

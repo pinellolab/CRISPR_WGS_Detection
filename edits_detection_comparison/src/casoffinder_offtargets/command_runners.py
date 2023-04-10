@@ -1,3 +1,7 @@
+"""Command runners. The runners run the input commands in parallel if the number
+of threads > 1.
+"""
+
 from tqdm import tqdm
 
 import multiprocessing
@@ -12,7 +16,6 @@ def run_command(command):
     :rtype: int
     """
     return subprocess.call(command, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
-
 
 def run_commands(commands, threads):
     """Run the input commands

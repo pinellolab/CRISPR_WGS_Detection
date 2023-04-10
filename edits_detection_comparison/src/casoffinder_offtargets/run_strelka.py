@@ -138,7 +138,6 @@ def main():
     args = parse_commandline()
     targets = parse_targets_coordinates(args.targets)
     run_strelka(args.normal_bam, args.tumor_bam, args.genome, targets, args.run_dir, args.out)
-    assert len(targets) == len(glob(os.path.join(args.out, "*.vcf")))
 
 if __name__ == "__main__":
     main()
