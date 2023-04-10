@@ -40,7 +40,7 @@ def parse_commandline():
         "--tumor-bam", type=str, metavar="BAM", dest="tumor_bam", help="Tumor BAM file"
     )
     parser.add_argument("--out", type=str, metavar="OUTDIR", help="Output directory")
-    return parser.parse_args()
+    return parser.parse_args()  # parse command line
 
 def mpileup(genome, region, bam, outfile):
     """Computes mpileup files using SAMtools for the input BAM. The resulting 
