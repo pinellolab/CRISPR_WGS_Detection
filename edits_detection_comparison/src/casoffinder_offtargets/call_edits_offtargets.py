@@ -19,7 +19,6 @@ import os
 MUTECTPY = "run_mutect.py"
 STRELKAPY = "run_strelka.py"
 STRELKARUNDIR = tempfile.mkdtemp()
-PINDELPY = "run_pindel.py"
 VARSCANPY = "run_varscan.py"
 
 def parse_commandline():
@@ -140,39 +139,6 @@ def run_strelka():
                 cmd % (STRELKAPY, targets, GENOME, normal_bam, tumor_bam, STRELKARUNDIR, odir)
             )
     run_commands(commands, VCALLINGTOOLS[1])
-
-def run_pindel():
-    """Run Pindel to call edits on the input regions
-    """
-    commands = []
-    for guide in GUIDES:
-        outdir = os.path.join(OUTDIR, VCALLINGTOOLS[2])
-        targets = os.path.join(OFFTARGETS, "casoffinder.%s.txt.out" % (guide.replace("Site4", "4").replace("Site3", "3")))
-        for cell_type in CELLTYPES:
-            cmd = (
-                "python %s --targets %s --genome %s --normal-bam %s --normal-sample "
-                "%s --tumor-bam %s --tumor-sample %s --out %s"
-            )
-            if cell_type == CELLTYPES[0]:  # GM12878
-                tumor_bam = os.path.join(BAMS, "%s.cram" % (guide)) if guide == GUIDES[0] else os.path.join(BAMS, "%s.bam" % (guide))
-                normal_bam = os.path.join(BAMS, "DNMT1Site3.bam")
-            else:  # K562
-                tumor_bam = os.path.join(BAMS, "%s_%s.cram" % (cell_type, guide))
-                normal_bam = os.path.join(BAMS, "%s_DNMT1Site3.cram" % (cell_type))
-            odir = os.path.join(outdir, cell_type, guide)
-            commands.append(
-                cmd % (
-                    STRELKAPY, 
-                    targets, 
-                    GENOME, 
-                    normal_bam, 
-                    "DNMT1Site3", 
-                    tumor_bam, 
-                    guide, 
-                    STRELKARUNDIR, 
-                    odir
-                )
-            )
 
 def run_varscan():
     """Run Varscan to call edits on the input regions
