@@ -11,14 +11,17 @@ from utils import (
 
 import multiprocessing
 import subprocess
+import tempfile
 import argparse
 import sys
 import os
 
 MUTECTPY = "run_mutect.py"
+STRELKAPY = "run_strelka.py"
+STRELKARUNDIR = tempfile.mkdtemp()
 
 def parse_commandline():
-    """The function parses the command line arguments provided as input
+    """Parse the command line arguments provided as input
 
     :return: parsed input arguments
     :rtype: argparse.Namespace
@@ -93,7 +96,7 @@ def run_mutect(threads):
     """
     commands = []
     for guide in GUIDES:
-        outdir = os.path.join(OUTDIR, "mutect2")
+        outdir = os.path.join(OUTDIR, VCALLINGTOOLS[0])
         targets = os.path.join(OFFTARGETS, "casoffinder.%s.txt.out" % (guide.replace("Site4", "4").replace("Site3", "3")))
         for cell_type in CELLTYPES:
             cmd = str(
@@ -112,6 +115,29 @@ def run_mutect(threads):
             )
     run_commands(commands, VCALLINGTOOLS[0])
 
+def run_strelka():
+    """Run strelka to call edits on the input regions
+    """
+    commands = []
+    for guide in GUIDES:
+        outdir = os.path.join(OUTDIR, VCALLINGTOOLS[1])
+        targets = os.path.join(OFFTARGETS, "casoffinder.%s.txt.out" % (guide.replace("Site4", "4").replace("Site3", "3")))
+        for cell_type in CELLTYPES:
+            cmd = (
+                "python %s --targets %s --genome %s --normal-bam %s --tumor-bam "
+                "%s --run-dir %s --out %s"
+            )
+            if cell_type == CELLTYPES[0]:  # GM12878
+                tumor_bam = os.path.join(BAMS, "%s.cram" % (guide)) if guide == GUIDES[0] else os.path.join(BAMS, "%s.bam" % (guide))
+                normal_bam = os.path.join(BAMS, "DNMT1Site3.bam")
+            else:  # K562
+                tumor_bam = os.path.join(BAMS, "%s_%s.cram" % (cell_type, guide))
+                normal_bam = os.path.join(BAMS, "%s_DNMT1Site3.cram" % (cell_type))
+            odir = os.path.join(outdir, cell_type, guide)
+            commands.append(
+                cmd % (STRELKAPY, targets, GENOME, normal_bam, tumor_bam, STRELKARUNDIR, odir)
+            )
+    run_commands(commands, VCALLINGTOOLS[1])
 
 def main():
     args = parse_commandline()
@@ -119,6 +145,9 @@ def main():
     if args.tool == VCALLINGTOOLS[0]:  # mutect2
         create_result_dirtree(args.tool)
         run_mutect(args.threads)
+    elif args.tool == VCALLINGTOOLS[1]:  # strelka
+        create_result_dirtree(args.tool)
+        run_strelka()
 
 if __name__ == "__main__":
     main()

@@ -13,7 +13,7 @@ import os
 MUTECT2 = "gatk Mutect2"  # Mutect2
 
 def parse_commandline():
-    """The function parses the command line arguments provided as input
+    """Parse the command line arguments provided as input
 
     :return: parsed input arguments
     :rtype: argparse.Namespace
@@ -47,6 +47,23 @@ def parse_commandline():
 
 
 def run_mutect(genome, bam1, bam2, normal, targets, threads, out):
+    """Wrapper function to call edits on the input regions using GATK Mutect2
+
+    :param genome: reference genome
+    :type genome: str
+    :param bam1: BAM 
+    :type bam1: str
+    :param bam2: BAM
+    :type bam2: str
+    :param normal: normal sample
+    :type normal: str
+    :param targets: target regions
+    :type targets: List[str]
+    :param threads: threads
+    :type threads: int
+    :param out: out 
+    :type out: _type_
+    """
     commands = [
         "%s -R %s -I %s -I %s -normal %s -L %s -O %s > /dev/null" 
         % (MUTECT2, genome, bam1, bam2, normal, target, os.path.join(out, "%s.vcf" % (target)))
@@ -62,5 +79,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-

@@ -1,13 +1,13 @@
 import os
 
-BASEDIR = "../data"
+BASEDIR = "/path/to/root/folder/"
 VCALLINGTOOLS = ["mutect2", "strelka", "pindel", "varscan"]
 GUIDES = ["EMX1", "HEKSite4", "RNF2", "VEGFASite3"]
 CELLTYPES = ["GM12878", "K562"]
 OFFTARGETS = os.path.join(BASEDIR, "offtargetDetection/casoffinder")
-GENOME = "../genome/Homo_sapiens_assembly38.fasta"
-BAMS = os.path.join(BASEDIR, "wgs/GM12878-Cas9/WGS1000/data/")
-OUTDIR = os.path.join(BASEDIR, "VCFs_casoffinder")
+GENOME = "/path/to/genome/fasta/"
+BAMS = os.path.join(BASEDIR, "/path/to/bam/")
+OUTDIR = "/path/to/out/folder/"
 
 def _create_celltype_dirtree(root):
     """(PRIVATE)

@@ -11,7 +11,7 @@ def run_command(command):
     :return: command signal
     :rtype: int
     """
-    return subprocess.call(command, shell=True)
+    return subprocess.call(command, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
 
 
 def run_commands(commands, threads):
