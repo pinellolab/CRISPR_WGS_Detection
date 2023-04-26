@@ -4,6 +4,8 @@ regions are specified in the input file.
 
 from targets_file_parser import parse_targets_coordinates
 
+from glob import glob
+
 import subprocess
 import tempfile
 import argparse
@@ -145,7 +147,7 @@ def run_pindel(
 def main():
     args = parse_commandline()
     targets = parse_targets_coordinates(args.targets)
-    # --> run pindel <--
+    run_pindel(args.tumor_bam, args.tumor_sample, args.normal_bam, args.normal_sample, targets, args.out, args.genome)
 
 if __name__ == "__main__":
     main()

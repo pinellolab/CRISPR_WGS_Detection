@@ -6,6 +6,7 @@ from utils import (
     CELLTYPES,
     OUTDIR,
     BAMS,
+    PINDEL_BAMS,
     create_result_dirtree
 )
 
@@ -153,18 +154,15 @@ def run_pindel():
                 "python %s --targets %s --genome %s --normal-bam %s --normal-sample "
                 "%s --tumor-bam %s --tumor-sample %s --out %s"
             )
-            if cell_type == CELLTYPES[0]:  # GM12878
-                tumor_bam = os.path.join(BAMS, "%s.cram" % (guide)) if guide == GUIDES[0] else os.path.join(BAMS, "%s.bam" % (guide))
-                normal_bam = os.path.join(BAMS, "DNMT1Site3.bam")
-            else:  # K562
-                tumor_bam = os.path.join(BAMS, "%s_%s.cram" % (cell_type, guide))
-                normal_bam = os.path.join(BAMS, "%s_DNMT1Site3.cram" % (cell_type))
+            normal_bam = os.path.join(PINDEL_BAMS, "%s_%s.ctl.bam" % (guide, cell_type))
+            tumor_bam = os.path.join(PINDEL_BAMS, "%s_%s.bam" % (guide, cell_type))
             odir = os.path.join(outdir, cell_type, guide)
             commands.append(
                 cmd % (
                     PINDELPY, targets, GENOME, normal_bam, "DNMT1Site3", tumor_bam, guide, odir
                 )
             )
+    run_commands(commands, VCALLINGTOOLS[2])
 
 def run_varscan():
     """Run Varscan to call edits on the input regions

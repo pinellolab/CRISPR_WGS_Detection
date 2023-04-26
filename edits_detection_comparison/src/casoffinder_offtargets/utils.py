@@ -7,6 +7,7 @@ CELLTYPES = ["GM12878", "K562"]
 OFFTARGETS = os.path.join(BASEDIR, "offtargetDetection/casoffinder")
 GENOME = "/path/to/genome/fasta/"
 BAMS = os.path.join(BASEDIR, "/path/to/bam/")
+PINDEL_BAMS = os.path.join(BASEDIR, "/path/to/bam/")
 OUTDIR = "/path/to/out/folder/"
 
 def _create_celltype_dirtree(root):
