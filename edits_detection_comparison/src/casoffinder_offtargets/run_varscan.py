@@ -15,6 +15,7 @@ SAMTOOLS = "samtools mpileup"
 SAMTOOLSTMP = tempfile.mkdtemp()  # stores temporary MPILEUP files
 VARSCAN = "varscan somatic"
 
+
 def parse_commandline():
     """Parse the command line arguments provided as input
 
@@ -30,11 +31,13 @@ def parse_commandline():
     parser.add_argument(
         "--targets", type=str, metavar="TARGETS-FILE", help="Targets coordinate file"
     )
+    parser.add_argument("--genome", type=str, metavar="GENOME", help="Reference genome")
     parser.add_argument(
-        "--genome", type=str, metavar="GENOME", help="Reference genome"
-    )
-    parser.add_argument(
-        "--normal-bam", type=str, metavar="BAM", dest="normal_bam", help="Normal BAM file"
+        "--normal-bam",
+        type=str,
+        metavar="BAM",
+        dest="normal_bam",
+        help="Normal BAM file",
     )
     parser.add_argument(
         "--tumor-bam", type=str, metavar="BAM", dest="tumor_bam", help="Tumor BAM file"
@@ -42,8 +45,9 @@ def parse_commandline():
     parser.add_argument("--out", type=str, metavar="OUTDIR", help="Output directory")
     return parser.parse_args()  # parse command line
 
+
 def mpileup(genome, region, bam, outfile):
-    """Computes mpileup files using SAMtools for the input BAM. The resulting 
+    """Computes mpileup files using SAMtools for the input BAM. The resulting
     mpileup file covers the input region.
 
     :param genome: reference genome
@@ -60,14 +64,13 @@ def mpileup(genome, region, bam, outfile):
     """
     print(genome, 0, region, bam, outfile)
     code = subprocess.call(
-        "%s -f %s -d %d -r %s %s > %s" % (SAMTOOLS, genome, 0, region, bam, outfile), 
-        shell=True
+        "%s -f %s -d %d -r %s %s > %s" % (SAMTOOLS, genome, 0, region, bam, outfile),
+        shell=True,
     )
     if code != 0:
-        raise OSError(
-            "An error occurred while creating mpileup file for %s" % (region)
-        )
+        raise OSError("An error occurred while creating mpileup file for %s" % (region))
     return outfile
+
 
 def run_varscan(genome, targets, normal_bam, tumor_bam, outdir):
     """Wrapper function to call edits on the input regions using VarScan
@@ -88,30 +91,39 @@ def run_varscan(genome, targets, normal_bam, tumor_bam, outdir):
     for target in targets:
         # compute mpileup files for normal and tumor BAMs
         mpileup_normal = mpileup(
-            genome, target, normal_bam, os.path.join(SAMTOOLSTMP, "%s_normal.mpileup" % (target))
+            genome,
+            target,
+            normal_bam,
+            os.path.join(SAMTOOLSTMP, "%s_normal.mpileup" % (target)),
         )
         mpileup_tumor = mpileup(
-            genome, target, tumor_bam, os.path.join(SAMTOOLSTMP, "%s_tumor.mpileup" % (target))
+            genome,
+            target,
+            tumor_bam,
+            os.path.join(SAMTOOLSTMP, "%s_tumor.mpileup" % (target)),
         )
         # call edits with varscan
         outfile = os.path.join(outdir, target)
         code = subprocess.call(
-            "%s %s %s %s --min-var-freq 0.0001 --output-vcf 1 --strand-filter 1" % (
-                VARSCAN, mpileup_normal, mpileup_tumor, outfile
-            ),
-            shell=True
+            "%s %s %s %s --min-var-freq 0.0001 --output-vcf 1 --strand-filter 1"
+            % (VARSCAN, mpileup_normal, mpileup_tumor, outfile),
+            shell=True,
         )
         if code != 0:
             raise OSError("An error occurred while calling edits on %s" % (target))
         # remove mpileup files
         code = subprocess.call("rm %s %s" % (mpileup_normal, mpileup_tumor), shell=True)
         if code != 0:
-            raise OSError("Unable to delete %s and %s" % (mpileup_normal, mpileup_tumor))
+            raise OSError(
+                "Unable to delete %s and %s" % (mpileup_normal, mpileup_tumor)
+            )
+
 
 def main():
     args = parse_commandline()
     targets = parse_targets_coordinates(args.targets)
     run_varscan(args.genome, targets, args.normal_bam, args.tumor_bam, args.out)
+
 
 if __name__ == "__main__":
     main()

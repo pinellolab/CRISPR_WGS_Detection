@@ -13,6 +13,7 @@ import os
 STRELKACONFIG = "configureStrelkaSomaticWorkflow.py"
 STRELKARUN = "runWorkflow.py"
 
+
 def parse_commandline():
     """Parse the command line arguments provided as input
 
@@ -28,20 +29,27 @@ def parse_commandline():
     parser.add_argument(
         "--targets", type=str, metavar="TARGETS-FILE", help="Targets coordinates file"
     )
+    parser.add_argument("--genome", type=str, metavar="GENOME", help="Reference genome")
     parser.add_argument(
-        "--genome", type=str, metavar="GENOME", help="Reference genome"
-    )
-    parser.add_argument(
-        "--normal-bam", type=str, metavar="BAM", dest="normal_bam", help="Normal BAM file"
+        "--normal-bam",
+        type=str,
+        metavar="BAM",
+        dest="normal_bam",
+        help="Normal BAM file",
     )
     parser.add_argument(
         "--tumor-bam", type=str, metavar="BAM", dest="tumor_bam", help="Tumor BAM file"
     )
     parser.add_argument(
-        "--run-dir", type=str, metavar="RUN-DIR", dest="run_dir", help="Temporary running directory"
+        "--run-dir",
+        type=str,
+        metavar="RUN-DIR",
+        dest="run_dir",
+        help="Temporary running directory",
     )
     parser.add_argument("--out", type=str, metavar="OUTDIR", help="Output directory")
     return parser.parse_args()  # parse command line
+
 
 def config(normal_bam, tumor_bam, genome, region, rundir):
     """Create Strelka's config file
@@ -59,7 +67,7 @@ def config(normal_bam, tumor_bam, genome, region, rundir):
     :raises OSError: raise if config file creation fails
     """
     cmd = (
-        "%s --normalBam %s --tumorBam %s --referenceFasta %s --region %s --exome --runDir %s" 
+        "%s --normalBam %s --tumorBam %s --referenceFasta %s --region %s --exome --runDir %s"
         % (STRELKACONFIG, normal_bam, tumor_bam, genome, region, rundir)
     )
     code = subprocess.call(cmd, shell=True)
@@ -67,7 +75,8 @@ def config(normal_bam, tumor_bam, genome, region, rundir):
         raise OSError(
             "An error occurred while building config script for region %s" % (region)
         )
-    
+
+
 def recover_results(rundir, region, outdir):
     """Recover the VCFs created by Strelka
 
@@ -93,11 +102,9 @@ def recover_results(rundir, region, outdir):
             raise OSError("Unable to recover %s" % (vcf))
     for vcf in glob(os.path.join(outdir, "somatic.*.vcf")):
         subprocess.call(
-            "mv %s %s" % (
-                vcf,
-                os.path.join(outdir, "_".join([region, os.path.basename(vcf)]))
-            ),
-            shell=True
+            "mv %s %s"
+            % (vcf, os.path.join(outdir, "_".join([region, os.path.basename(vcf)]))),
+            shell=True,
         )
         if code != 0:
             raise OSError("An error occurred while renaming %s" % (vcf))
@@ -133,12 +140,15 @@ def run_strelka(normal_bam, tumor_bam, genome, targets, rundir, outdir):
         if code != 0:
             raise OSError("An error occurred while calling edits on %s" % (target))
         recover_results(rundir, target, outdir)
-    
+
+
 def main():
     args = parse_commandline()
     targets = parse_targets_coordinates(args.targets)
-    run_strelka(args.normal_bam, args.tumor_bam, args.genome, targets, args.run_dir, args.out)
+    run_strelka(
+        args.normal_bam, args.tumor_bam, args.genome, targets, args.run_dir, args.out
+    )
+
 
 if __name__ == "__main__":
     main()
- 

@@ -12,6 +12,7 @@ import os
 
 MUTECT2 = "gatk Mutect2"  # Mutect2
 
+
 def parse_commandline():
     """Parse the command line arguments provided as input
 
@@ -23,7 +24,7 @@ def parse_commandline():
         description="Script to call variants in the specified input regions",
         usage="\n\tpython %(prog)s --targets <TARGETS-FILE> --genome <GENOME> "
         "--bam1 <BAM> --bam2 <BAM> --normal <NORMAL-SAMPLE> --out <OUTDIR> "
-        "--thread <THREADS>"
+        "--thread <THREADS>",
     )
     parser.add_argument(
         "--targets", type=str, metavar="TARGETS-FILE", help="Targets coordinates file"
@@ -51,7 +52,7 @@ def run_mutect(genome, bam1, bam2, normal, targets, threads, out):
 
     :param genome: reference genome
     :type genome: str
-    :param bam1: BAM 
+    :param bam1: BAM
     :type bam1: str
     :param bam2: BAM
     :type bam2: str
@@ -61,21 +62,33 @@ def run_mutect(genome, bam1, bam2, normal, targets, threads, out):
     :type targets: List[str]
     :param threads: threads
     :type threads: int
-    :param out: out 
+    :param out: out
     :type out: _type_
     """
     commands = [
-        "%s -R %s -I %s -I %s -normal %s -L %s -O %s > /dev/null" 
-        % (MUTECT2, genome, bam1, bam2, normal, target, os.path.join(out, "%s.vcf" % (target)))
+        "%s -R %s -I %s -I %s -normal %s -L %s -O %s > /dev/null"
+        % (
+            MUTECT2,
+            genome,
+            bam1,
+            bam2,
+            normal,
+            target,
+            os.path.join(out, "%s.vcf" % (target)),
+        )
         for target in targets
     ]
     run_commands(commands, threads)  # run mutect in parallel
 
+
 def main():
     args = parse_commandline()
     targets = parse_targets_coordinates(args.targets)
-    run_mutect(args.genome, args.bam1, args.bam2, args.normal, targets, args.threads, args.out)
+    run_mutect(
+        args.genome, args.bam1, args.bam2, args.normal, targets, args.threads, args.out
+    )
     assert len(targets) == len(glob(os.path.join(args.out, "*.vcf")))
+
 
 if __name__ == "__main__":
     main()

@@ -1,14 +1,18 @@
 import os
 
-BASEDIR = "/path/to/root/folder/"
+BASEDIR = "/data/pinello/PROJECTS/2017_07_DARPA_SIMULATIONS/"
 VCALLINGTOOLS = ["mutect2", "strelka", "pindel", "varscan"]
-GUIDES = ["EMX1", "HEKSite4", "RNF2", "VEGFASite3"]
+# GUIDES = ["EMX1", "HEKSite4", "RNF2", "VEGFASite3"]
+GUIDES = ["VEGFASite3"]
 CELLTYPES = ["GM12878", "K562"]
 OFFTARGETS = os.path.join(BASEDIR, "offtargetDetection/casoffinder")
-GENOME = "/path/to/genome/fasta/"
-BAMS = os.path.join(BASEDIR, "/path/to/bam/")
-PINDEL_BAMS = os.path.join(BASEDIR, "/path/to/bam/")
-OUTDIR = "/path/to/out/folder/"
+GENOME = "/data/pinello/COMMON_DATA/REFERENCE_GENOMES/Broad/hg38/Homo_sapiens_assembly38.fasta"
+BAMS = os.path.join(BASEDIR, "wgs/GM12878-Cas9/WGS1000/data/")
+PINDEL_BAMS = os.path.join(
+    BASEDIR, "wgs/GM12878-Cas9/WGS1000/data/bams_at_casoffinder/"
+)
+OUTDIR = "/PHShome/mi825/Desktop/wgs_crisprcas9/VCFs_casoffinder"
+
 
 def _create_celltype_dirtree(root):
     """(PRIVATE)
