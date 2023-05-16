@@ -26,7 +26,7 @@ def parse_commandline():
         description="Script to call variants in the specified regions using pindel.",
         usage="\n\tpython3 %(prog)s --targets <TARGETS-FILE> --genome <GENOME> "
         "--normal-bam <BAM> --normal-sample <NORMAL-SAMPLE> --tumor-bam <BAM> "
-        " --tumor-sample <TUMOR-SAMPLE> --threads <THREADS> --out <OUTDIR>",
+        " --tumor-sample <TUMOR-SAMPLE> --out <OUTDIR>",
     )
     parser.add_argument(
         "--targets", type=str, metavar="TARGETS-FILE", help="Targets coordinates file"
@@ -55,6 +55,20 @@ def parse_commandline():
         metavar="TUMOR-SAMPLE",
         dest="tumor_sample",
         help="Tumor sample",
+    )
+    parser.add_argument(
+        "--offtarget-upstream",
+        action="store_true",
+        default=False,
+        dest="offtarget_upstream",
+        help="Detect edits on the 20bp upstream the target site",
+    )
+    parser.add_argument(
+        "--offtarget-downstream",
+        action="store_true",
+        default=False,
+        dest="offtarget_downstream",
+        help="Detect edits on the 20bp downstream the target site",
     )
     parser.add_argument(
         "--threads",
@@ -156,7 +170,9 @@ def run_pindel(
 
 def main():
     args = parse_commandline()
-    targets = parse_targets_coordinates(args.targets)
+    targets = parse_targets_coordinates(
+        args.targets, args.offtarget_upstream, args.offtarget_downstream
+    )
     run_pindel(
         args.tumor_bam,
         args.tumor_sample,

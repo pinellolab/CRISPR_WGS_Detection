@@ -5,6 +5,8 @@ from utils import (
     GUIDES,
     CELLTYPES,
     OUTDIR,
+    OUTDIRUPSTREAM,
+    OUTDIRDOWNSTREAM,
     BAMS,
     PINDEL_BAMS,
     create_result_dirtree,
@@ -42,6 +44,20 @@ def parse_commandline():
         metavar="TOOL-NAME",
         help="Variant calling tool. Available values: <mutect2, strelka, "
         "varscan, pindel>",
+    )
+    parser.add_argument(
+        "--offtarget-upstream",
+        action="store_true",
+        default=False,
+        dest="offtarget_upstream",
+        help="Detect edits on the 20bp upstream the target site",
+    )
+    parser.add_argument(
+        "--offtarget-downstream",
+        action="store_true",
+        default=False,
+        dest="offtarget_downstream",
+        help="Detect edits on the 20bp downstream the target site",
     )
     parser.add_argument(
         "--threads",
@@ -94,15 +110,22 @@ def runinfo(args):
     sys.stderr.write("\tTHREADS:\t%d\n\n" % (args.threads))
 
 
-def run_mutect(threads):
+def run_mutect(offtarget_upstream, offtarget_downstream, threads):
     """Run Mutect2 to call edits on the input regions
 
     :param threads: threads
     :type threads: int
     """
     commands = []
+    otargets = ""
     for guide in GUIDES:
         outdir = os.path.join(OUTDIR, VCALLINGTOOLS[0])
+        if offtarget_upstream:
+            outdir = os.path.join(OUTDIRUPSTREAM, VCALLINGTOOLS[0])
+            otargets = "--offtarget-upstream"
+        elif offtarget_downstream:
+            outdir = os.path.join(OUTDIRDOWNSTREAM, VCALLINGTOOLS[0])
+            otargets = "--offtarget-downstream"
         targets = os.path.join(
             OFFTARGETS,
             "casoffinder.%s.txt.out"
@@ -111,7 +134,7 @@ def run_mutect(threads):
         for cell_type in CELLTYPES:
             cmd = str(
                 "python %s --targets %s --genome %s --bam1 %s --bam2 %s "
-                "--normal DNMT1Site3 --out %s --threads %d"
+                "--normal DNMT1Site3 --out %s %s --threads %d"
             )
             if cell_type == CELLTYPES[0]:  # GM12878
                 bam1 = (
@@ -125,16 +148,23 @@ def run_mutect(threads):
                 bam2 = os.path.join(BAMS, "K562_DNMT1Site3.cram")
             odir = os.path.join(outdir, cell_type, guide)
             commands.append(
-                cmd % (MUTECTPY, targets, GENOME, bam1, bam2, odir, threads)
+                cmd % (MUTECTPY, targets, GENOME, bam1, bam2, odir, otargets, threads)
             )
     run_commands(commands, VCALLINGTOOLS[0])
 
 
-def run_strelka():
+def run_strelka(offtarget_upstream, offtarget_downstream):
     """Run strelka to call edits on the input regions"""
     commands = []
+    otargets = ""
     for guide in GUIDES:
         outdir = os.path.join(OUTDIR, VCALLINGTOOLS[1])
+        if offtarget_upstream:
+            outdir = os.path.join(OUTDIRUPSTREAM, VCALLINGTOOLS[1])
+            otargets = "--offtarget-upstream"
+        elif offtarget_downstream:
+            outdir = os.path.join(OUTDIRDOWNSTREAM, VCALLINGTOOLS[1])
+            otargets = "--offtarget-downstream"
         targets = os.path.join(
             OFFTARGETS,
             "casoffinder.%s.txt.out"
@@ -143,7 +173,7 @@ def run_strelka():
         for cell_type in CELLTYPES:
             cmd = (
                 "python %s --targets %s --genome %s --normal-bam %s --tumor-bam "
-                "%s --run-dir %s --out %s"
+                "%s --run-dir %s %s --out %s"
             )
             if cell_type == CELLTYPES[0]:  # GM12878
                 tumor_bam = (
@@ -165,17 +195,25 @@ def run_strelka():
                     normal_bam,
                     tumor_bam,
                     STRELKARUNDIR,
+                    otargets,
                     odir,
                 )
             )
     run_commands(commands, VCALLINGTOOLS[1])
 
 
-def run_pindel(threads):
+def run_pindel(offtarget_upstream, offtarget_downstream, threads):
     """Run Pindel to call edits on the input regions"""
     commands = []
+    otargets = ""
     for guide in GUIDES:
         outdir = os.path.join(OUTDIR, VCALLINGTOOLS[2])
+        if offtarget_upstream:
+            outdir = os.path.join(OUTDIRUPSTREAM, VCALLINGTOOLS[2])
+            otargets = "--offtarget-upstream"
+        elif offtarget_downstream:
+            outdir = os.path.join(OUTDIRDOWNSTREAM, VCALLINGTOOLS[2])
+            otargets = "--offtarget-downstream"
         targets = os.path.join(
             OFFTARGETS,
             "casoffinder.%s.txt.out"
@@ -184,7 +222,7 @@ def run_pindel(threads):
         for cell_type in CELLTYPES:
             cmd = (
                 "python %s --targets %s --genome %s --normal-bam %s --normal-sample "
-                "%s --tumor-bam %s --tumor-sample %s --threads %d --out %s"
+                "%s --tumor-bam %s --tumor-sample %s --threads %d %s --out %s"
             )
             normal_bam = os.path.join(PINDEL_BAMS, "%s_%s.ctl.bam" % (guide, cell_type))
             tumor_bam = os.path.join(PINDEL_BAMS, "%s_%s.bam" % (guide, cell_type))
@@ -200,17 +238,25 @@ def run_pindel(threads):
                     tumor_bam,
                     guide,
                     threads,
+                    otargets,
                     odir,
                 )
             )
     run_commands(commands, VCALLINGTOOLS[2])
 
 
-def run_varscan():
+def run_varscan(offtarget_upstream, offtarget_downstream):
     """Run Varscan to call edits on the input regions"""
     commands = []
+    otargets = ""
     for guide in GUIDES:
         outdir = os.path.join(OUTDIR, VCALLINGTOOLS[3])
+        if offtarget_upstream:
+            outdir = os.path.join(OUTDIRUPSTREAM, VCALLINGTOOLS[3])
+            otargets = "--offtarget-upstream"
+        elif offtarget_downstream:
+            outdir = os.path.join(OUTDIRDOWNSTREAM, VCALLINGTOOLS[3])
+            otargets = "--offtarget-downstream"
         targets = os.path.join(
             OFFTARGETS,
             "casoffinder.%s.txt.out"
@@ -219,7 +265,7 @@ def run_varscan():
         for cell_type in CELLTYPES:
             cmd = (
                 "python %s --targets %s --genome %s --normal-bam %s --tumor-bam "
-                "%s --out %s"
+                "%s %s --out %s"
             )
             if cell_type == CELLTYPES[0]:  # GM12878
                 tumor_bam = (
@@ -233,26 +279,37 @@ def run_varscan():
                 normal_bam = os.path.join(BAMS, "K562_DNMT1Site3.cram")
             odir = os.path.join(outdir, cell_type, guide)
             commands.append(
-                cmd % (VARSCANPY, targets, GENOME, normal_bam, tumor_bam, odir)
+                cmd
+                % (VARSCANPY, targets, GENOME, normal_bam, tumor_bam, otargets, odir)
             )
     run_commands(commands, VCALLINGTOOLS[3])
 
 
 def main():
     args = parse_commandline()
+    if args.offtarget_upstream and args.offtarget_downstream:
+        raise ValueError("Forbidden region selection")
     runinfo(args)  # print run info to stderr
     if args.tool == VCALLINGTOOLS[0]:  # mutect2
-        create_result_dirtree(args.tool)
-        run_mutect(args.threads)
+        create_result_dirtree(
+            args.tool, args.offtarget_upstream, args.offtarget_downstream
+        )
+        run_mutect(args.offtarget_upstream, args.offtarget_downstream, args.threads)
     elif args.tool == VCALLINGTOOLS[1]:  # strelka
-        create_result_dirtree(args.tool)
-        run_strelka()
+        create_result_dirtree(
+            args.tool, args.offtarget_upstream, args.offtarget_downstream
+        )
+        run_strelka(args.offtarget_upstream, args.offtarget_downstream)
     elif args.tool == VCALLINGTOOLS[2]:  # pindel
-        create_result_dirtree(args.tool)
-        run_pindel(args.threads)
+        create_result_dirtree(
+            args.tool, args.offtarget_upstream, args.offtarget_downstream
+        )
+        run_pindel(args.offtarget_upstream, args.offtarget_downstream, args.threads)
     elif args.tool == VCALLINGTOOLS[3]:  # varscan
-        create_result_dirtree(args.tool)
-        run_varscan()
+        create_result_dirtree(
+            args.tool, args.offtarget_upstream, args.offtarget_downstream
+        )
+        run_varscan(args.offtarget_upstream, args.offtarget_downstream)
     else:
         raise ValueError("Forbidden variant calling tool (%s)" % (args.tool))
 

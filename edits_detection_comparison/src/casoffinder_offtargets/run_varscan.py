@@ -42,6 +42,20 @@ def parse_commandline():
     parser.add_argument(
         "--tumor-bam", type=str, metavar="BAM", dest="tumor_bam", help="Tumor BAM file"
     )
+    parser.add_argument(
+        "--offtarget-upstream",
+        action="store_true",
+        default=False,
+        dest="offtarget_upstream",
+        help="Detect edits on the 20bp upstream the target site",
+    )
+    parser.add_argument(
+        "--offtarget-downstream",
+        action="store_true",
+        default=False,
+        dest="offtarget_downstream",
+        help="Detect edits on the 20bp downstream the target site",
+    )
     parser.add_argument("--out", type=str, metavar="OUTDIR", help="Output directory")
     return parser.parse_args()  # parse command line
 
@@ -121,7 +135,9 @@ def run_varscan(genome, targets, normal_bam, tumor_bam, outdir):
 
 def main():
     args = parse_commandline()
-    targets = parse_targets_coordinates(args.targets)
+    targets = parse_targets_coordinates(
+        args.targets, args.offtarget_upstream, args.offtarget_downstream
+    )
     run_varscan(args.genome, targets, args.normal_bam, args.tumor_bam, args.out)
 
 

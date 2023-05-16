@@ -2,8 +2,8 @@ import os
 
 BASEDIR = "/data/pinello/PROJECTS/2017_07_DARPA_SIMULATIONS/"
 VCALLINGTOOLS = ["mutect2", "strelka", "pindel", "varscan"]
-# GUIDES = ["EMX1", "HEKSite4", "RNF2", "VEGFASite3"]
-GUIDES = ["VEGFASite3"]
+GUIDES = ["EMX1", "HEKSite4", "RNF2", "VEGFASite3"]
+# GUIDES = ["VEGFASite3"]
 CELLTYPES = ["GM12878", "K562"]
 OFFTARGETS = os.path.join(BASEDIR, "offtargetDetection/casoffinder")
 GENOME = "/data/pinello/COMMON_DATA/REFERENCE_GENOMES/Broad/hg38/Homo_sapiens_assembly38.fasta"
@@ -12,6 +12,8 @@ PINDEL_BAMS = os.path.join(
     BASEDIR, "wgs/GM12878-Cas9/WGS1000/data/bams_at_casoffinder/"
 )
 OUTDIR = "/PHShome/mi825/Desktop/wgs_crisprcas9/VCFs_casoffinder"
+OUTDIRUPSTREAM = "/PHShome/mi825/Desktop/wgs_crisprcas9/VCFs_casoffinder_upstream"
+OUTDIRDOWNSTREAM = "/PHShome/mi825/Desktop/wgs_crisprcas9/VCFs_casoffinder_downstream"
 
 
 def _create_celltype_dirtree(root):
@@ -28,7 +30,7 @@ def _create_celltype_dirtree(root):
             os.mkdir(guide_dir)
 
 
-def create_result_dirtree(tool):
+def create_result_dirtree(tool, offtarget_upstream, offtarget_downstream):
     """Build the directory tree for the tool
 
     :param tool: variant calling tool
@@ -36,7 +38,12 @@ def create_result_dirtree(tool):
     """
     assert tool in VCALLINGTOOLS
     # if there is no tool tree directory, build the tree
-    tool_root_dir = os.path.join(OUTDIR, tool)
+    if offtarget_downstream:
+        tool_root_dir = os.path.join(OUTDIRDOWNSTREAM, tool)
+    elif offtarget_upstream:
+        tool_root_dir = os.path.join(OUTDIRUPSTREAM, tool)
+    else:
+        tool_root_dir = os.path.join(OUTDIR, tool)
     if not os.path.isdir(tool_root_dir):
         os.mkdir(tool_root_dir)
     # check GM12878 directories

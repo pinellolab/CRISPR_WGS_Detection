@@ -37,6 +37,20 @@ def parse_commandline():
     )
     parser.add_argument("--out", type=str, metavar="OUTDIR", help="Output directory")
     parser.add_argument(
+        "--offtarget-upstream",
+        action="store_true",
+        default=False,
+        dest="offtarget_upstream",
+        help="Detect edits on the 20bp upstream the target site",
+    )
+    parser.add_argument(
+        "--offtarget-downstream",
+        action="store_true",
+        default=False,
+        dest="offtarget_downstream",
+        help="Detect edits on the 20bp downstream the target site",
+    )
+    parser.add_argument(
         "--threads",
         type=int,
         metavar="THREADS",
@@ -83,7 +97,9 @@ def run_mutect(genome, bam1, bam2, normal, targets, threads, out):
 
 def main():
     args = parse_commandline()
-    targets = parse_targets_coordinates(args.targets)
+    targets = parse_targets_coordinates(
+        args.targets, args.offtarget_upstream, args.offtarget_downstream
+    )
     run_mutect(
         args.genome, args.bam1, args.bam2, args.normal, targets, args.threads, args.out
     )
